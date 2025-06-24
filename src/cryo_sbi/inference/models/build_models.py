@@ -6,7 +6,7 @@ import cryo_sbi.inference.models.estimator_models as estimator_models
 from cryo_sbi.inference.models.embedding_nets import EMBEDDING_NETS
 
 
-def build_npe_flow_model(config: dict, **embedding_kwargs) -> nn.Module:
+def build_classifier(config: dict, **embedding_kwargs) -> nn.Module:
     """
     Function to build NPE estimator with embedding net
     from config_file
@@ -19,17 +19,6 @@ def build_npe_flow_model(config: dict, **embedding_kwargs) -> nn.Module:
         estimator (nn.Module): NPE estimator
     """
 
-    if config["MODEL"] == "MAF":
-        model = zuko.flows.MAF
-    elif config["MODEL"] == "NSF":
-        model = zuko.flows.NSF
-    elif config["MODEL"] == "SOSPF":
-        model = zuko.flows.SOSPF
-    else:
-        raise NotImplementedError(
-            f"Model : {config['MODEL']} has not been implemented yet!"
-        )
-
     try:
         embedding = partial(
             EMBEDDING_NETS[config["EMBEDDING"]], config["OUT_DIM"], **embedding_kwargs
@@ -40,20 +29,16 @@ def build_npe_flow_model(config: dict, **embedding_kwargs) -> nn.Module:
 The following embeddings are implemented : {[key for key in EMBEDDING_NETS.keys()]}"
         )
 
-    estimator = estimator_models.NPEWithEmbedding(
+    estimator = estimator_models.ClassifierWithEmbedding(
         embedding_net=embedding,
         output_embedding_dim=config["OUT_DIM"],
-        num_transforms=config["NUM_TRANSFORM"],
-        num_hidden_flow=config["NUM_HIDDEN_FLOW"],
-        hidden_flow_dim=config["HIDDEN_DIM_FLOW"],
-        flow=model,
-        theta_shift=config["THETA_SHIFT"],
-        theta_scale=config["THETA_SCALE"],
-        **{"activation": partial(nn.LeakyReLU, 0.1)},
+        num_classes=config["NUM_CLASSES"],
+        num_layers=config["NUM_LAYERS"],
+        nodes_per_layer=config["NODES_PER_LAYER"],
+        **{
+            "activation": partial(nn.LeakyReLU, 0.1),
+            "dropout": config["DROPOUT"],
+        },
     )
 
     return estimator
-
-
-def build_nre_classifier_model(config: dict, **embedding_kwargs) -> nn.Module:
-    raise NotImplementedError("NRE classifier model has not been implemented yet!")

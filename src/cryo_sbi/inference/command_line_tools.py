@@ -1,10 +1,10 @@
 import argparse
-from cryo_sbi.inference.train_npe_model import (
-    npe_train_no_saving,
+from cryo_sbi.inference.train_models import (
+    train_classifier
 )
 
 
-def cl_npe_train_no_saving():
+def cl_classifier_train_no_saving():
     cl_parser = argparse.ArgumentParser()
 
     cl_parser.add_argument(
@@ -47,7 +47,7 @@ def cl_npe_train_no_saving():
 
     args = cl_parser.parse_args()
 
-    npe_train_no_saving(
+    train_classifier(
         image_config=args.image_config_file,
         train_config=args.train_config_file,
         epochs=args.epochs,

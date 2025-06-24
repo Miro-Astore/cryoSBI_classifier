@@ -23,6 +23,31 @@ def gen_quat() -> torch.Tensor:
     return quat
 
 
+class IndexPrior():
+    def __init__(self, max_index: int, device="cpu") -> None:
+        self.max_index = max_index
+        self.device = device
+
+        self.index_prior = torch.distributions.Categorical(
+            probs=torch.tensor(
+                [1 / (max_index + 1) for _ in range(max_index + 1)],
+                device=device,
+            )
+        )
+
+    def sample(self, shape) -> torch.Tensor:
+        """
+        Sample indices from the prior distribution.
+
+        Args:
+            shape (tuple): Shape of the samples to be generated.
+
+        Returns:
+            torch.Tensor: Sampled indices.
+        """
+        return self.index_prior.sample(shape)
+
+
 def get_image_priors(
     max_index, image_config: dict, device="cuda"
 ) -> zuko.distributions.BoxUniform:
@@ -110,10 +135,7 @@ def get_image_priors(
         ndims=1,
     )
 
-    index_prior = zuko.distributions.BoxUniform(
-        lower=torch.tensor([0], dtype=torch.float32, device=device),
-        upper=torch.tensor([max_index], dtype=torch.float32, device=device),
-    )
+    index_prior = IndexPrior(max_index, device)
     quaternion_prior = QuaternionPrior(device)
     if (
         image_config.get("ROTATIONS")
@@ -132,7 +154,6 @@ def get_image_priors(
         b_factor_prior,
         amp_prior,
         snr_prior,
-        device=device,
     )
 
 
@@ -168,7 +189,6 @@ class ImagePrior:
         b_factor_prior,
         amp_prior,
         snr_prior,
-        device,
     ) -> None:
         self.priors = [
             index_prior,

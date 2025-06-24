@@ -449,6 +449,21 @@ class MRCdataset:
                 mrc_to_tensor(self.paths[self._path_index[i]])[self._file_index[i]]
                 for i in idx
             ]
+    
+    def get_path(self, idx: Union[int, list]) -> Union[str, List[str]]:
+        """
+        Returns the path of the image at the given global index.
+
+        Args:
+            idx (int, List): Global index of the image.
+        """
+        assert (
+            self._index_map is not None
+        ), "Index map not built. First call build_index_map() or load_index_map()"
+        if isinstance(idx, int):
+            return self.paths[self._path_index[idx]], self._file_index[idx]
+        if isinstance(idx, (list, np.ndarray, torch.Tensor)):
+            return [self.paths[self._path_index[i]] for i in idx], self._file_index[idx]
 
 
 class MRCloader(torch.utils.data.DataLoader):

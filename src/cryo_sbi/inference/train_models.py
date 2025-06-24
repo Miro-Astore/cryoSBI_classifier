@@ -1,6 +1,7 @@
 from typing import Union
 import json
 import torch
+import torch.nn as nn
 import numpy as np
 import torch.optim as optim
 from torch.utils.data import TensorDataset
@@ -12,12 +13,37 @@ from lampe.utils import GDStep
 from itertools import islice
 
 from cryo_sbi.inference.priors import get_image_priors, PriorLoader
-from cryo_sbi.inference.models.build_models import build_npe_flow_model
+from cryo_sbi.inference.models.build_models import build_classifier
 from cryo_sbi.inference.validate_train_config import check_train_params
 from cryo_sbi.wpa_simulator.cryo_em_simulator import cryo_em_simulator
 from cryo_sbi.wpa_simulator.validate_image_config import check_image_params
 from cryo_sbi.inference.validate_train_config import check_train_params
 import cryo_sbi.utils.image_utils as img_utils
+
+
+class ClassifierLoss(nn.Module):
+    """
+    Loss function for the classifier.
+    """
+
+    def __init__(self, estimator: torch.nn.Module):
+        super().__init__()
+        self.estimator = estimator
+
+    def forward(self, indices: torch.Tensor, images: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the loss function.
+
+        Args:
+            indices (torch.Tensor): Indices of the models.
+            images (torch.Tensor): Simulated images.
+
+        Returns:
+            torch.Tensor: Loss value.
+        """
+        logits = self.estimator(images)
+        #print(f"Logits shape: {logits.argmax(dim=1)}, Indices shape: {indices}")
+        return torch.nn.functional.cross_entropy(logits, indices, reduction="mean")
 
 
 def load_model(
@@ -33,8 +59,8 @@ def load_model(
         train_from_checkpoint (bool): whether to load model from checkpoint or from scratch
     """
 
-    check_train_params(train_config)
-    estimator = build_npe_flow_model(train_config)
+    #check_train_params(train_config)
+    estimator = build_classifier(train_config)
     if train_from_checkpoint:
         if not isinstance(model_state_dict, str):
             raise Warning("No model state dict specified! --model_state_dict is empty")
@@ -44,7 +70,7 @@ def load_model(
     return estimator
 
 
-def npe_train_no_saving(
+def train_classifier(
     image_config: str,
     train_config: str,
     epochs: int,
@@ -82,7 +108,7 @@ def npe_train_no_saving(
     """
 
     train_config = json.load(open(train_config))
-    check_train_params(train_config)
+    #check_train_params(train_config)
     image_config = json.load(open(image_config))
 
     assert simulation_batch_size >= train_config["BATCH_SIZE"]
@@ -115,7 +141,7 @@ def npe_train_no_saving(
         train_config, model_state_dict, device, train_from_checkpoint
     )
 
-    loss = NPELoss(estimator)
+    loss = ClassifierLoss(estimator)
     optimizer = optim.AdamW(
         estimator.parameters(), lr=train_config["LEARNING_RATE"], weight_decay=0.001
     )
@@ -124,6 +150,7 @@ def npe_train_no_saving(
 
     print("Training neural netowrk:")
     estimator.train()
+    tot_images = 0
     with tqdm(range(epochs), unit="epoch") as tq:
         for epoch in tq:
             losses = []
@@ -151,6 +178,7 @@ def npe_train_no_saving(
                     num_pixels,
                     pixel_size,
                 )
+                tot_images += images.shape[0]
                 for _indices, _images in zip(
                     indices.split(train_config["BATCH_SIZE"]),
                     images.split(train_config["BATCH_SIZE"]),
@@ -170,5 +198,8 @@ def npe_train_no_saving(
             if epoch % saving_frequency == 0:
                 torch.save(estimator.state_dict(), estimator_file + f"_epoch={epoch}")
 
+    print(
+        f"Training finished. Total images simulated: {tot_images}, mean loss: {np.mean(mean_loss)}"
+    )
     torch.save(estimator.state_dict(), estimator_file)
     torch.save(torch.tensor(mean_loss), loss_file)

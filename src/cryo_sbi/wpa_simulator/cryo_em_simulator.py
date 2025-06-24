@@ -43,7 +43,7 @@ def cryo_em_simulator(
     Returns:
         torch.Tensor: A tensor of the simulated cryo-EM image.
     """
-    models_selected = models[index.round().long().flatten()]
+    models_selected = models[index]
     image = project_density(
         models_selected,
         quaternion,
@@ -150,12 +150,6 @@ class CryoEmSimulator:
             assert isinstance(
                 indices, torch.Tensor
             ), "Indices are not a torch.tensor, converting to torch.tensor."
-            assert (
-                indices.dtype == torch.float32
-            ), "Indices are not a torch.float32, converting to torch.float32."
-            assert (
-                indices.ndim == 2
-            ), "Indices are not a 2D tensor, converting to 2D tensor. With shape (batch_size, 1)."
             parameters[0] = indices
 
         images = []
