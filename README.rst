@@ -51,7 +51,7 @@ Navigate to the cloned repository and install the module
 --------------------------------------------------------
 .. code:: bash
     
-    cd cryo_em_SBI
+    cd cryoSBI
 
 .. code:: bash
 
