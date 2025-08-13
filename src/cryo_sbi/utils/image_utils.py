@@ -8,7 +8,7 @@ import mrcfile
 from tqdm import tqdm
 
 
-def circular_mask(n_pixels: int, radius: int, inside: bool = True) -> torch.Tensor:
+def circular_mask(n_pixels: int, radius: int, inside: bool = True, device='cpu') -> torch.Tensor:
     """
     Create a circular mask for a given image size and radius.
 
@@ -21,7 +21,7 @@ def circular_mask(n_pixels: int, radius: int, inside: bool = True) -> torch.Tens
         mask (torch.Tensor): Mask of shape (n_pixels, n_pixels).
     """
 
-    grid = torch.linspace(-0.5 * (n_pixels - 1), 0.5 * (n_pixels - 1), n_pixels)
+    grid = torch.linspace(-0.5 * (n_pixels - 1), 0.5 * (n_pixels - 1), n_pixels, device=device)
     r_2d = grid[None, :] ** 2 + grid[:, None] ** 2
 
     if inside is True:
@@ -296,7 +296,7 @@ def estimate_noise_psd(images: torch.Tensor, image_size: int, mask_radius : Unio
     """
     if mask_radius is  None:
         mask_radius = image_size // 2
-    mask = circular_mask(image_size, mask_radius, inside=False)
+    mask = circular_mask(image_size, mask_radius, inside=False, device=images.device)
     denominator = mask.sum() * images.shape[0]
     images_masked = images * mask
     mean_est = images_masked.sum() / denominator

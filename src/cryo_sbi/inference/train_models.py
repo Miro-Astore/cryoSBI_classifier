@@ -125,6 +125,7 @@ def train_classifier(
     else:
         models = torch.load(image_config["MODEL_FILE"]).to(device).to(torch.float32)
 
+<<<<<<< HEAD
 
     if models.ndim == 3:
         num_models = models.shape[0]
@@ -136,6 +137,11 @@ def train_classifier(
     print(f'Training on {num_models} models with {num_representatives if num_representatives is not None else 1} representatives')
 
     image_prior = get_image_priors(num_models, num_representatives, image_config, device="cpu")
+=======
+    assert train_config["NUM_CLASSES"] == models.shape[0], f"Number of classes in train config ({train_config['NUM_CLASSES']}) does not match number of models ({models.shape})"
+
+    image_prior = get_image_priors(len(models) - 1, image_config, device="cpu")
+>>>>>>> a209b03ba1b98a8f5a1b56539efc6247d40de482
     prior_loader = PriorLoader(
         image_prior, batch_size=simulation_batch_size, num_workers=n_workers
     )
