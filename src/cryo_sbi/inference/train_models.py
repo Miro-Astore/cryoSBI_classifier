@@ -125,7 +125,17 @@ def train_classifier(
     else:
         models = torch.load(image_config["MODEL_FILE"]).to(device).to(torch.float32)
 
-    image_prior = get_image_priors(len(models) - 1, image_config, device="cpu")
+
+    if models.ndim == 3:
+        num_models = models.shape[0]
+        num_representatives = None
+    if models.ndim == 4:
+        num_models = models.shape[0]
+        num_representatives = models.shape[1]
+
+    print(f'Training on {num_models} models with {num_representatives if num_representatives is not None else 1} representatives')
+
+    image_prior = get_image_priors(num_models, num_representatives, image_config, device="cpu")
     prior_loader = PriorLoader(
         image_prior, batch_size=simulation_batch_size, num_workers=n_workers
     )
@@ -150,7 +160,6 @@ def train_classifier(
 
     print("Training neural netowrk:")
     estimator.train()
-    tot_images = 0
     with tqdm(range(epochs), unit="epoch") as tq:
         for epoch in tq:
             losses = []
@@ -178,7 +187,7 @@ def train_classifier(
                     num_pixels,
                     pixel_size,
                 )
-                tot_images += images.shape[0]
+                indices = indices[:, 0] if indices.ndim == 2 else indices
                 for _indices, _images in zip(
                     indices.split(train_config["BATCH_SIZE"]),
                     images.split(train_config["BATCH_SIZE"]),
@@ -198,8 +207,5 @@ def train_classifier(
             if epoch % saving_frequency == 0:
                 torch.save(estimator.state_dict(), estimator_file + f"_epoch={epoch}")
 
-    print(
-        f"Training finished. Total images simulated: {tot_images}, mean loss: {np.mean(mean_loss)}"
-    )
     torch.save(estimator.state_dict(), estimator_file)
     torch.save(torch.tensor(mean_loss), loss_file)

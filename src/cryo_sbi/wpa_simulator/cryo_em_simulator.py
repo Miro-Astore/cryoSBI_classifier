@@ -43,7 +43,10 @@ def cryo_em_simulator(
     Returns:
         torch.Tensor: A tensor of the simulated cryo-EM image.
     """
-    models_selected = models[index]
+    if index.ndim == 2:
+        models_selected = models[index[:, 0], index[:, 1]]
+    elif index.ndim == 1:
+        models_selected = models[index]
     image = project_density(
         models_selected,
         quaternion,
@@ -63,7 +66,12 @@ class CryoEmSimulator:
         self._device = device
         self._load_params(config_fname)
         self._load_models()
-        self._priors = get_image_priors(self.max_index, self._config, device=device)
+        self._priors = get_image_priors(
+            self.num_models,
+            self.num_representatives,
+            self._config,
+            device=device
+        )
         self._num_pixels = torch.tensor(
             self._config["N_PIXELS"], dtype=torch.float32, device=device
         )
@@ -116,18 +124,21 @@ class CryoEmSimulator:
 
         self._models = models
 
-        assert self._models.ndim == 3, "Models are not of shape (models, 3, atoms)."
-        assert self._models.shape[1] == 3, "Models are not of shape (models, 3, atoms)."
+        if self._models.ndim == 3:
+            self.num_models = self._models.shape[0]
+            self.num_representatives = None
+        elif self._models.ndim == 4:
+            self.num_models = self._models.shape[0]
+            self.num_representatives = self._models.shape[1]
+        else:
+            raise ValueError(
+                "Models are not of shape (models, 3, atoms) or (models, representatives, 3, atoms)."
+            )
 
-    @property
-    def max_index(self) -> int:
-        """
-        Returns the maximum index of the model file.
+        assert self._models.ndim == 3 or self._models.ndim == 4, "Models are not of shape (models, 3, atoms) or (models, representatives, 3, atoms)."
+        assert self._models.shape[-2] == 3, "Models are not of shape (..., 3, atoms)."
+        
 
-        Returns:
-            int: Maximum index of the model file.
-        """
-        return len(self._models) - 1
 
     def simulate(self, num_sim, indices=None, return_parameters=False, batch_size=None):
         """
@@ -158,6 +169,7 @@ class CryoEmSimulator:
         for i in range(0, num_sim, batch_size):
             batch_indices = indices[i : i + batch_size]
             batch_parameters = [param[i : i + batch_size] for param in parameters[1:]]
+            print(batch_indices.shape)
             batch_images = cryo_em_simulator(
                 self._models,
                 batch_indices,

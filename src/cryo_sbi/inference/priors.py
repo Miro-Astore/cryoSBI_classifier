@@ -24,16 +24,25 @@ def gen_quat() -> torch.Tensor:
 
 
 class IndexPrior():
-    def __init__(self, max_index: int, device="cpu") -> None:
-        self.max_index = max_index
+    def __init__(self, num_models: int, num_representatives: int = None, device="cpu") -> None:
+        self.num_models = num_models
+        self.num_representatives = num_representatives
         self.device = device
 
         self.index_prior = torch.distributions.Categorical(
             probs=torch.tensor(
-                [1 / (max_index + 1) for _ in range(max_index + 1)],
+                [1 / self.num_models for _ in range(self.num_models)],
                 device=device,
             )
         )
+
+        if num_representatives is not None:
+            self.representatives_prior = torch.distributions.Categorical(
+                probs=torch.tensor(
+                    [1 / self.num_representatives for _ in range(self.  num_representatives)],
+                    device=device,
+                )
+            )
 
     def sample(self, shape) -> torch.Tensor:
         """
@@ -43,19 +52,29 @@ class IndexPrior():
             shape (tuple): Shape of the samples to be generated.
 
         Returns:
-            torch.Tensor: Sampled indices.
+            torch.Tensor: If num_representatives is not None, returns a 2D tensor where
+                  the first column contains samples from the index prior and
+                  the second column contains samples from the representatives prior.
+                  Otherwise, returns a 1D tensor with samples from the index prior.
         """
-        return self.index_prior.sample(shape)
+        if self.num_representatives is not None:
+            return torch.stack([
+                self.index_prior.sample(shape),
+                self.representatives_prior.sample(shape)
+            ], dim=1)
+        else:
+            return self.index_prior.sample(shape)
 
 
 def get_image_priors(
-    max_index, image_config: dict, device="cuda"
+        num_models: int, num_representatives: int, image_config: dict, device="cuda"
 ) -> zuko.distributions.BoxUniform:
     """
     Return uniform prior in 1d from 0 to 19
 
     Args:
-        max_index (int): max index of the 1d prior
+        num_models (int): number of models in structure prior
+        num_representatives (int): number of representatives for each model bin
 
     Returns:
         zuko.distributions.BoxUniform: prior
@@ -135,7 +154,7 @@ def get_image_priors(
         ndims=1,
     )
 
-    index_prior = IndexPrior(max_index, device)
+    index_prior = IndexPrior(num_models, num_representatives, device)
     quaternion_prior = QuaternionPrior(device)
     if (
         image_config.get("ROTATIONS")
