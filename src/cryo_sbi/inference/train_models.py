@@ -4,11 +4,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.optim as optim
-from torch.utils.data import TensorDataset
-from torchvision import transforms
 from tqdm import tqdm
-from lampe.data import JointLoader, H5Dataset
-from lampe.inference import NPELoss
 from lampe.utils import GDStep
 from itertools import islice
 
@@ -26,9 +22,10 @@ class ClassifierLoss(nn.Module):
     Loss function for the classifier.
     """
 
-    def __init__(self, estimator: torch.nn.Module):
+    def __init__(self, estimator: torch.nn.Module, label_smoothing: float = 0.0) -> None:
         super().__init__()
         self.estimator = estimator
+        self.label_smoothing = label_smoothing
 
     def forward(self, indices: torch.Tensor, images: torch.Tensor) -> torch.Tensor:
         """
@@ -42,8 +39,7 @@ class ClassifierLoss(nn.Module):
             torch.Tensor: Loss value.
         """
         logits = self.estimator(images)
-        #print(f"Logits shape: {logits.argmax(dim=1)}, Indices shape: {indices}")
-        return torch.nn.functional.cross_entropy(logits, indices, reduction="mean")
+        return torch.nn.functional.cross_entropy(logits, indices, reduction="mean", label_smoothing=self.label_smoothing)
 
 
 def load_model(
@@ -125,7 +121,6 @@ def train_classifier(
     else:
         models = torch.load(image_config["MODEL_FILE"]).to(device).to(torch.float32)
 
-<<<<<<< HEAD
 
     if models.ndim == 3:
         num_models = models.shape[0]
@@ -137,11 +132,6 @@ def train_classifier(
     print(f'Training on {num_models} models with {num_representatives if num_representatives is not None else 1} representatives')
 
     image_prior = get_image_priors(num_models, num_representatives, image_config, device="cpu")
-=======
-    assert train_config["NUM_CLASSES"] == models.shape[0], f"Number of classes in train config ({train_config['NUM_CLASSES']}) does not match number of models ({models.shape})"
-
-    image_prior = get_image_priors(len(models) - 1, image_config, device="cpu")
->>>>>>> a209b03ba1b98a8f5a1b56539efc6247d40de482
     prior_loader = PriorLoader(
         image_prior, batch_size=simulation_batch_size, num_workers=n_workers
     )
@@ -157,7 +147,14 @@ def train_classifier(
         train_config, model_state_dict, device, train_from_checkpoint
     )
 
-    loss = ClassifierLoss(estimator)
+    try :
+        label_smoothing = train_config["LABEL_SMOOTHING"]
+        print(f"Using label smoothing of {label_smoothing}")
+    except KeyError:
+        label_smoothing = 0.0
+        print("No label smoothing specified, using 0.0")
+
+    loss = ClassifierLoss(estimator, label_smoothing=label_smoothing)
     optimizer = optim.AdamW(
         estimator.parameters(), lr=train_config["LEARNING_RATE"], weight_decay=0.001
     )

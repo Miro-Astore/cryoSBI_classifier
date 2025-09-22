@@ -1,8 +1,9 @@
+import math
+import os
 from typing import Tuple
 import torch
 import torch.nn as nn
-import zuko
-from lampe.inference import NPE, NRE
+import torch.nn.functional as F
 
 
 class Classifier(nn.Module):
@@ -26,6 +27,44 @@ class Classifier(nn.Module):
         return self.classifier(x)
 
 
+class PrototypeClassifier(nn.Module):
+    def __init__(self, input_dim, out_dim, num_layers, nodes_per_layer,
+                 activation=nn.ReLU, dropout=0.0, use_cosine=False):
+        """
+        input_dim: input feature dimension
+        out_dim: number of classes
+        num_layers: number of hidden layers
+        nodes_per_layer: hidden layer size
+        feat_dim: final embedding size (defaults to nodes_per_layer)
+        use_cosine: if True, use cosine similarity; else negative squared distance
+        """
+        super().__init__()
+        
+        self.use_cosine = use_cosine
+        self.input_dim = input_dim
+        self.out_dim = out_dim
+
+        # Learnable prototypes, one per class
+        self.prototypes = nn.Parameter(torch.randn(self.out_dim, self.input_dim))
+        print(f"Initialized PrototypeClassifier with {self.out_dim} classes, "
+              f"embedding dim {self.input_dim}, use_cosine={use_cosine}")
+
+    def forward(self, z, tau=1.0):
+
+        if self.use_cosine:
+            z = F.normalize(z, dim=-1)
+            protos = F.normalize(self.prototypes, dim=-1)
+            logits = z @ protos.T / tau  # cosine similarity scaled
+        else:
+            # Negative squared Euclidean distance
+            # logits_{i,c} = -||z_i - proto_c||^2
+            z2 = (z ** 2).sum(dim=1, keepdim=True)          # [B,1]
+            p2 = (self.prototypes ** 2).sum(dim=1).unsqueeze(0)  # [1,C]
+            logits = -(z2 + p2 - 2 * z @ self.prototypes.T) / tau
+
+        return logits 
+
+
 class ClassifierWithEmbedding(nn.Module):
     """Classification with embedding net
 
@@ -41,6 +80,7 @@ class ClassifierWithEmbedding(nn.Module):
         num_classes: int = 2,
         num_layers: int = 5,
         nodes_per_layer: int = 128,
+        prototype: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -62,14 +102,22 @@ class ClassifierWithEmbedding(nn.Module):
         """
 
         super().__init__()
-
-        self.classifier = Classifier(
-            output_embedding_dim,
-            num_classes,
-            num_layers,
-            nodes_per_layer,
-            **kwargs,
-        )
+        if prototype:
+            self.classifier = PrototypeClassifier(
+                output_embedding_dim,
+                num_classes,
+                num_layers,
+                nodes_per_layer,
+                **kwargs,
+            )
+        else:   
+            self.classifier = Classifier(
+                output_embedding_dim,
+                num_classes,
+                num_layers,
+                nodes_per_layer,
+                **kwargs,
+            )
         self.embedding = embedding_net()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

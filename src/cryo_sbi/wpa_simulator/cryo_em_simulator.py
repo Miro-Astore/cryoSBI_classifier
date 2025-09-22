@@ -169,7 +169,6 @@ class CryoEmSimulator:
         for i in range(0, num_sim, batch_size):
             batch_indices = indices[i : i + batch_size]
             batch_parameters = [param[i : i + batch_size] for param in parameters[1:]]
-            print(batch_indices.shape)
             batch_images = cryo_em_simulator(
                 self._models,
                 batch_indices,

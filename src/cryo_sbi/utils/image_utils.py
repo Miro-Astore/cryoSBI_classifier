@@ -1,5 +1,6 @@
 import math
 from typing import List, Union
+from functools import lru_cache
 import numpy as np
 import torch
 import torchvision.transforms as transforms
@@ -347,6 +348,39 @@ class WhitenImage:
         return images
 
 
+class GaussianSpatialMask:
+    """
+    Applies a soft 2D Gaussian mask in the image domain to suppress edges and emphasize the center.
+    """
+
+    def __init__(self, image_size: int, sigma: float):
+        self._image_size = image_size
+        self._sigma = sigma
+
+        grid = torch.linspace(
+            -0.5 * (image_size - 1), 0.5 * (image_size - 1), image_size
+        )
+        r_2d = grid[None, :] ** 2 + grid[:, None] ** 2
+        self._mask = torch.exp(-r_2d / (2 * sigma**2))
+
+    def __call__(self, image: torch.Tensor) -> torch.Tensor:
+        """
+        Applies the Gaussian spatial mask to an image.
+
+        Args:
+            image (torch.Tensor): Image of shape (n_pixels, n_pixels) or (n_channels, n_pixels, n_pixels).
+
+        Returns:
+            torch.Tensor: Masked image.
+        """
+        if len(image.shape) == 2:
+            return image * self._mask
+        elif len(image.shape) == 3:
+            return image * self._mask.unsqueeze(0)
+        else:
+            raise NotImplementedError("Image must be 2D or 3D tensor")
+
+
 class MRCdataset:
     """
     Creates a dataset of MRC files.
@@ -361,27 +395,27 @@ class MRCdataset:
         __getitem__: Returns tensor of the MRC file at the given index.
     """
 
-    def __init__(self, image_paths: List[str]):
+    def __init__(self, image_paths: List[str], cache_size: int = 16):
         super().__init__()
         self.paths = image_paths
         self._num_paths = len(image_paths)
         self._index_map = None
+        self._mrc_to_tensor_cached = lru_cache(maxsize=cache_size)(mrc_to_tensor)
 
     def __len__(self):
         return self._num_paths
 
     def __getitem__(self, idx):
-        return idx, mrc_to_tensor(self.paths[idx])
+        """Returns tensor of the MRC file at the given index."""
+        return idx, self._mrc_to_tensor_cached(self.paths[idx])
 
-    def _extract_num_particles(self, path):
-        future_mrc = mrcfile.open_async(path)
-        mrc = future_mrc.result()
-        data_shape = mrc.data.shape
-        # img_stack = mrc.is_image_stack()
-        num_images = data_shape[0] if len(data_shape) > 2 else 1
-        return num_images
+    @staticmethod
+    def _extract_num_particles(path):
+        with mrcfile.open(path, permissive=True, header_only=True) as mrc:
+            num_images = int(mrc.header.nz)
+            return num_images if num_images > 0 else 1
 
-    def build_index_map(self):
+    def build_index_map(self, method: str = "mrc"):
         """
         Builds a map of image indices to file paths and file indices.
         """
@@ -389,6 +423,14 @@ class MRCdataset:
             print("Index map already built.")
             return
 
+        if method == "mrc":
+            self._build_index_map_by_loading_mrc()
+        elif method == "star":
+            raise NotImplementedError("STAR file parsing not implemented yet.")
+        else:
+            raise ValueError("Method must be 'mrc' or 'star'.")
+
+    def _build_index_map_by_loading_mrc(self):
         self._path_index = []
         self._file_index = []
         print("Initalizing indexing...")
@@ -414,7 +456,7 @@ class MRCdataset:
             file_index=self._file_index,
             paths=self.paths,
         )
-
+    
     def load_index_map(self, path: str):
         """
         Loads the index map from a file.
@@ -441,12 +483,12 @@ class MRCdataset:
             self._index_map is not None
         ), "Index map not built. First call build_index_map() or load_index_map()"
         if isinstance(idx, int):
-            image = mrc_to_tensor(self.paths[self._path_index[idx]])
+            image = self._mrc_to_tensor_cached(self.paths[self._path_index[idx]])
             if image.ndim > 2:
                 return image[self._file_index[idx]]
         if isinstance(idx, (list, np.ndarray, torch.Tensor)):
             return [
-                mrc_to_tensor(self.paths[self._path_index[i]])[self._file_index[i]]
+                self._mrc_to_tensor_cached(self.paths[self._path_index[i]])[self._file_index[i]]
                 for i in idx
             ]
     
@@ -476,4 +518,4 @@ class MRCloader(torch.utils.data.DataLoader):
     """
 
     def __init__(self, image_paths: List[str], **kwargs):
-        super().__init__(MRCdataset(image_paths), batch_size=None, **kwargs)
+        super().__init__(MRCdataset(image_paths, cache_size=0), batch_size=None, **kwargs)
