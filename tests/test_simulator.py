@@ -91,7 +91,7 @@ def test_simulator_default_settings(num_images):
 @pytest.mark.parametrize(("num_images"), [1, 5])
 def test_simulator_custom_indices(num_images):
     sim = CryoEmSimulator("tests/config_files/image_params_testing.json")
-    test_indices = torch.arange(num_images, dtype=torch.float32).reshape(-1, 1)
+    test_indices = torch.arange(num_images, dtype=torch.int64)
     images, parameters = sim.simulate(
         num_images, indices=test_indices, return_parameters=True
     )

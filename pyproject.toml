@@ -15,7 +15,6 @@ authors = [
 
 version = "0.2"
 dependencies = [
-    "lampe",
     "zuko",
     "torch",
     "numpy", 
@@ -27,6 +26,4 @@ dependencies = [
 
 
 [project.scripts]
-train_npe_model = "cryo_sbi.inference.command_line_tools:cl_npe_train_no_saving"
 train_classifier = "cryo_sbi.inference.command_line_tools:cl_classifier_train_no_saving"
-model_to_tensor = "cryo_sbi.utils.command_line_tools:cl_models_to_tensor"

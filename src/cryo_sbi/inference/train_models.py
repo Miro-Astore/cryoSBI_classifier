@@ -1,3 +1,4 @@
+import os
 from typing import Union
 import json
 import torch
@@ -5,16 +6,21 @@ import torch.nn as nn
 import numpy as np
 import torch.optim as optim
 from tqdm import tqdm
-from lampe.utils import GDStep
 from itertools import islice
+import logging
 
 from cryo_sbi.inference.priors import get_image_priors, PriorLoader
 from cryo_sbi.inference.models.build_models import build_classifier
-from cryo_sbi.inference.validate_train_config import check_train_params
 from cryo_sbi.wpa_simulator.cryo_em_simulator import cryo_em_simulator
-from cryo_sbi.wpa_simulator.validate_image_config import check_image_params
-from cryo_sbi.inference.validate_train_config import check_train_params
-import cryo_sbi.utils.image_utils as img_utils
+from cryo_sbi.wpa_simulator.check_image_config import check_image_params
+from cryo_sbi.inference.check_train_config import check_train_params
+
+
+def setup_logging(debug: bool = False):
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+    )
 
 
 class ClassifierLoss(nn.Module):
@@ -22,7 +28,9 @@ class ClassifierLoss(nn.Module):
     Loss function for the classifier.
     """
 
-    def __init__(self, estimator: torch.nn.Module, label_smoothing: float = 0.0) -> None:
+    def __init__(
+        self, estimator: torch.nn.Module, label_smoothing: float = 0.0
+    ) -> None:
         super().__init__()
         self.estimator = estimator
         self.label_smoothing = label_smoothing
@@ -39,29 +47,59 @@ class ClassifierLoss(nn.Module):
             torch.Tensor: Loss value.
         """
         logits = self.estimator(images)
-        return torch.nn.functional.cross_entropy(logits, indices, reduction="mean", label_smoothing=self.label_smoothing)
+        return torch.nn.functional.cross_entropy(
+            logits, indices, reduction="mean", label_smoothing=self.label_smoothing
+        )
+
+
+class GDStep:
+    """
+    Gradient descent step with optional gradient clipping and learning rate scheduling. (Adapted from lampe package)
+    """
+
+    def __init__(
+        self,
+        optimizer: torch.optim.Optimizer,
+        clip: float = None,
+        lr_scheduler: torch.optim.lr_scheduler = None,
+    ) -> None:
+        self.optimizer = optimizer
+        self.parameters = [
+            p for group in optimizer.param_groups for p in group["params"]
+        ]
+        self.clip = clip
+        self.lr_scheduler = lr_scheduler
+
+    def __call__(self, loss: torch.tensor) -> torch.tensor:
+        if loss.isfinite().all():
+            self.optimizer.zero_grad()
+            loss.backward()
+
+            if self.clip is None:
+                self.optimizer.step()
+            else:
+                norm = nn.utils.clip_grad_norm_(self.parameters, self.clip)
+                if norm.isfinite():
+                    self.optimizer.step()
+
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.step()
+
+        return loss.detach()
 
 
 def load_model(
     train_config: str, model_state_dict: str, device: str, train_from_checkpoint: bool
 ) -> torch.nn.Module:
-    """
-    Load model from checkpoint or from scratch.
-
-    Args:
-        train_config (str): path to train config file
-        model_state_dict (str): path to model state dict
-        device (str): device to load model to
-        train_from_checkpoint (bool): whether to load model from checkpoint or from scratch
-    """
-
-    #check_train_params(train_config)
+    train_config = check_train_params(train_config)
     estimator = build_classifier(train_config)
     if train_from_checkpoint:
-        if not isinstance(model_state_dict, str):
-            raise Warning("No model state dict specified! --model_state_dict is empty")
+        if not os.path.isfile(model_state_dict):
+            raise ValueError(
+                "Model state dict file does not exist. Please provide a valid path."
+            )
         print(f"Loading model parameters from {model_state_dict}")
-        estimator.load_state_dict(torch.load(model_state_dict))
+        estimator.load_state_dict(torch.load(model_state_dict, weights_only=True))
     estimator.to(device=device)
     return estimator
 
@@ -79,33 +117,12 @@ def train_classifier(
     saving_frequency: int = 20,
     simulation_batch_size: int = 1024,
 ) -> None:
-    """
-    Train NPE model by simulating training data on the fly.
-    Saves model and loss to disk.
-
-    Args:
-        image_config (str): path to image config file
-        train_config (str): path to train config file
-        epochs (int): number of epochs
-        estimator_file (str): path to estimator file
-        loss_file (str): path to loss file
-        train_from_checkpoint (bool, optional): train from checkpoint. Defaults to False.
-        model_state_dict (str, optional): path to pretrained model state dict. Defaults to None.
-        n_workers (int, optional): number of workers. Defaults to 1.
-        device (str, optional): training device. Defaults to "cpu".
-        saving_frequency (int, optional): frequency of saving model. Defaults to 20.
-        whiten_filter (Union[None, str], optional): path to whiten filter. Defaults to None.
-
-    Raises:
-        Warning: No model state dict specified! --model_state_dict is empty
-
-    Returns:
-        None
-    """
+    setup_logging()
 
     train_config = json.load(open(train_config))
-    #check_train_params(train_config)
+    train_config = check_train_params(train_config)
     image_config = json.load(open(image_config))
+    image_config = check_image_params(image_config)
 
     assert simulation_batch_size >= train_config["BATCH_SIZE"]
     assert simulation_batch_size % train_config["BATCH_SIZE"] == 0
@@ -121,7 +138,6 @@ def train_classifier(
     else:
         models = torch.load(image_config["MODEL_FILE"]).to(device).to(torch.float32)
 
-
     if models.ndim == 3:
         num_models = models.shape[0]
         num_representatives = None
@@ -129,9 +145,13 @@ def train_classifier(
         num_models = models.shape[0]
         num_representatives = models.shape[1]
 
-    print(f'Training on {num_models} models with {num_representatives if num_representatives is not None else 1} representatives')
+    logging.info(
+        f"Training on {num_models} models with {num_representatives if num_representatives is not None else 1} representatives"
+    )
 
-    image_prior = get_image_priors(num_models, num_representatives, image_config, device="cpu")
+    image_prior = get_image_priors(
+        num_models, num_representatives, image_config, device="cpu"
+    )
     prior_loader = PriorLoader(
         image_prior, batch_size=simulation_batch_size, num_workers=n_workers
     )
@@ -147,18 +167,27 @@ def train_classifier(
         train_config, model_state_dict, device, train_from_checkpoint
     )
 
-    try :
-        label_smoothing = train_config["LABEL_SMOOTHING"]
-        print(f"Using label smoothing of {label_smoothing}")
-    except KeyError:
-        label_smoothing = 0.0
-        print("No label smoothing specified, using 0.0")
+    loss = ClassifierLoss(estimator)
 
-    loss = ClassifierLoss(estimator, label_smoothing=label_smoothing)
     optimizer = optim.AdamW(
-        estimator.parameters(), lr=train_config["LEARNING_RATE"], weight_decay=0.001
+        estimator.parameters(),
+        lr=train_config["LEARNING_RATE"],
+        weight_decay=train_config["WEIGHT_DECAY"],
     )
-    step = GDStep(optimizer, clip=train_config["CLIP_GRADIENT"])
+
+    if train_config["ONE_CYCLE_SCHEDULER"]:
+        logging.info("Using One Cycle LR Scheduler")
+        lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=train_config["LEARNING_RATE"],
+            total_steps=epochs
+            * 100
+            * (simulation_batch_size // train_config["BATCH_SIZE"]),
+        )
+
+    step = GDStep(
+        optimizer, clip=train_config["CLIP_GRADIENT"], lr_scheduler=lr_scheduler
+    )
     mean_loss = []
 
     print("Training neural netowrk:")
@@ -205,7 +234,9 @@ def train_classifier(
                     )
             losses = torch.stack(losses)
 
-            tq.set_postfix(loss=losses.mean().item())
+            tq.set_postfix(
+                loss=losses.mean().item(), lr=optimizer.param_groups[0]["lr"]
+            )
             mean_loss.append(losses.mean().item())
             if epoch % saving_frequency == 0:
                 torch.save(estimator.state_dict(), estimator_file + f"_epoch={epoch}")

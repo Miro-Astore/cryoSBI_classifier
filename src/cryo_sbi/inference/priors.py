@@ -1,7 +1,7 @@
 import torch
 import zuko
 from torch.distributions.distribution import Distribution
-from torch.utils.data import DataLoader, Dataset, IterableDataset
+from torch.utils.data import DataLoader, IterableDataset
 
 
 def gen_quat() -> torch.Tensor:
@@ -23,8 +23,10 @@ def gen_quat() -> torch.Tensor:
     return quat
 
 
-class IndexPrior():
-    def __init__(self, num_models: int, num_representatives: int = None, device="cpu") -> None:
+class IndexPrior:
+    def __init__(
+        self, num_models: int, num_representatives: int = None, device="cpu"
+    ) -> None:
         self.num_models = num_models
         self.num_representatives = num_representatives
         self.device = device
@@ -39,7 +41,10 @@ class IndexPrior():
         if num_representatives is not None:
             self.representatives_prior = torch.distributions.Categorical(
                 probs=torch.tensor(
-                    [1 / self.num_representatives for _ in range(self.  num_representatives)],
+                    [
+                        1 / self.num_representatives
+                        for _ in range(self.num_representatives)
+                    ],
                     device=device,
                 )
             )
@@ -58,16 +63,19 @@ class IndexPrior():
                   Otherwise, returns a 1D tensor with samples from the index prior.
         """
         if self.num_representatives is not None:
-            return torch.stack([
-                self.index_prior.sample(shape),
-                self.representatives_prior.sample(shape)
-            ], dim=1)
+            return torch.stack(
+                [
+                    self.index_prior.sample(shape),
+                    self.representatives_prior.sample(shape),
+                ],
+                dim=1,
+            )
         else:
             return self.index_prior.sample(shape)
 
 
 def get_image_priors(
-        num_models: int, num_representatives: int, image_config: dict, device="cuda"
+    num_models: int, num_representatives: int, image_config: dict, device="cuda"
 ) -> zuko.distributions.BoxUniform:
     """
     Return uniform prior in 1d from 0 to 19

@@ -1,7 +1,5 @@
 import argparse
-from cryo_sbi.inference.train_models import (
-    train_classifier
-)
+from cryo_sbi.inference.train_models import train_classifier
 
 
 def cl_classifier_train_no_saving():

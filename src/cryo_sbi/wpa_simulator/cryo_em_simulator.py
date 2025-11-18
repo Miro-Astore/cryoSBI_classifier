@@ -1,4 +1,3 @@
-from typing import Union, Callable
 import json
 import numpy as np
 import torch
@@ -8,7 +7,7 @@ from cryo_sbi.wpa_simulator.image_generation import project_density
 from cryo_sbi.wpa_simulator.noise import add_noise
 from cryo_sbi.wpa_simulator.normalization import gaussian_normalize_image
 from cryo_sbi.inference.priors import get_image_priors
-from cryo_sbi.wpa_simulator.validate_image_config import check_image_params
+from cryo_sbi.wpa_simulator.check_image_config import check_image_params
 
 
 def cryo_em_simulator(
@@ -67,10 +66,7 @@ class CryoEmSimulator:
         self._load_params(config_fname)
         self._load_models()
         self._priors = get_image_priors(
-            self.num_models,
-            self.num_representatives,
-            self._config,
-            device=device
+            self.num_models, self.num_representatives, self._config, device=device
         )
         self._num_pixels = torch.tensor(
             self._config["N_PIXELS"], dtype=torch.float32, device=device
@@ -135,10 +131,10 @@ class CryoEmSimulator:
                 "Models are not of shape (models, 3, atoms) or (models, representatives, 3, atoms)."
             )
 
-        assert self._models.ndim == 3 or self._models.ndim == 4, "Models are not of shape (models, 3, atoms) or (models, representatives, 3, atoms)."
+        assert (
+            self._models.ndim == 3 or self._models.ndim == 4
+        ), "Models are not of shape (models, 3, atoms) or (models, representatives, 3, atoms)."
         assert self._models.shape[-2] == 3, "Models are not of shape (..., 3, atoms)."
-        
-
 
     def simulate(self, num_sim, indices=None, return_parameters=False, batch_size=None):
         """

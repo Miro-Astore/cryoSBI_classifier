@@ -6,7 +6,7 @@ def check_image_params(config: dict) -> None:
         config (dict): Dictionary containing image parameters.
 
     Returns:
-        None
+        config (dict): Validated configuration dictionary.
     """
 
     needed_keys = [
@@ -24,4 +24,4 @@ def check_image_params(config: dict) -> None:
     for key in needed_keys:
         assert key in config.keys(), f"Please provide a value for {key}"
 
-    return None
+    return config

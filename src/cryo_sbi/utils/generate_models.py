@@ -3,6 +3,33 @@ import MDAnalysis as mda
 from MDAnalysis.analysis import align
 import torch
 
+# Model CV2+RMSD
+for set_idx in range(5):
+    monomers = [f"models_CV2+RMSD/set_{set_idx}/center_{j}.pdb" for j in range(40)]
+    dimers = [
+        f"spqr_dimers/l10A_conf1/cv-{set_idx}.pdb",
+        f"spqr_dimers/l10A_conf2/cv-{set_idx}.pdb",
+    ]
+    decoy = [f"decoys/cv-{set_idx}.pdb"]
+    noise = [f"noise/fps-{12+set_idx}.pdb"]
+    combined_models_files = monomers + dimers + decoy + noise
+
+    models = []
+    max_num_atoms = 0
+    for model_file in combined_models_files:
+        u = mda.Universe(model_file)
+        model = u.select_atoms("all").atoms.positions.T
+        model -= model.mean(axis=1).reshape(3, -1)
+        models.append(model)
+        if model.shape[1] > max_num_atoms:
+            max_num_atoms = model.shape[1]
+
+    models_torch = torch.full((len(models), 3, max_num_atoms), torch.inf)
+    for i, model in enumerate(models):
+        models_torch[i, :, : model.shape[1]] = torch.tensor(model)
+
+    torch.save(models_torch, f"torch_models/models_CV2+RMSD_set{set_idx}.pt")
+
 
 def pdb_parser_(fname: str, atom_selection: str = "name CA") -> torch.tensor:
     """
@@ -129,28 +156,28 @@ def traj_parser(top_file: str, traj_file: str, output_file: str) -> None:
 
 
 def models_to_tensor(
-        model_files, 
-        output_file, 
-        n_pdbs: Union[int, None] = None,
-        top_file: Union[str, None] = None,
-    ):
+    model_files,
+    output_file,
+    n_pdbs: Union[int, None] = None,
+    top_file: Union[str, None] = None,
+):
     """
     Converts different model files to a torch tensor.
-    
+
     Parameters
     ----------
     model_files : list
         A list of model files to convert to a torch tensor.
-        
+
     output_file : str
         The path to the output file. Must be a .pt file.
-        
+
     n_models : int
         The number of models to convert to a torch tensor. Just needed for models in pdb files.
 
     top_file : str
         The path to the topology file. Just needed for models in trr files.
-    
+
     Returns
     -------
         None
@@ -164,5 +191,3 @@ def models_to_tensor(
         assert n_pdbs is not None, "Please provide the number of pdb files."
         assert top_file is None, "The topology file is not needed for pdb files."
         pdb_parser(model_files, n_pdbs, output_file)
-        
-

@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 
@@ -75,7 +74,7 @@ def project_density(
     num_batch, _, num_atoms = coords.shape
     mask = torch.isfinite(coords).all(dim=1).float()
     num_valid_atoms = mask.sum(dim=1, keepdim=True)
-    norm = 1 / (2 * torch.pi * sigma.squeeze()**2 * num_valid_atoms.squeeze())
+    norm = 1 / (2 * torch.pi * sigma.squeeze() ** 2 * num_valid_atoms.squeeze())
 
     grid_min = -pixel_size * num_pixels * 0.5
     grid_max = pixel_size * num_pixels * 0.5
