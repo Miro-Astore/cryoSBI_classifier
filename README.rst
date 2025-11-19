@@ -15,10 +15,6 @@ cryoSBI - Simulation-based Inference for Cryo-EM
     :alt: Testing Status
     :target: https://github.com/DSilva27/cryo_em_SBI/actions
 
-Summary
--------
-XXX
-
 Installing
 ----------
 To install the module you will have to dowload the repository and create a virtual environment with the required dependencies.
@@ -33,12 +29,14 @@ After creating the virtual environment, you should install the required dependen
 Dependencies
 ------------
 
-1. `Lampe <https://lampe.readthedocs.io/en/stable/>`_.
-2. `SciPy <https://scipy.org/>`_.
-3. `Numpy <https://numpy.org/>`_.
-4. `PyTorch <https://pytorch.org/get-started/locally/>`_.
-5. json
-6. `mrcfile <https://pypi.org/project/mrcfile/>`_.
+#. `Zuko <https://pypi.org/project/zuko/>`_.
+#. `PyTorch <https://pytorch.org/get-started/locally/>`_.
+#. `NumPy <https://numpy.org/>`_.
+#. `Matplotlib <https://matplotlib.org/>`_.
+#. `SciPy <https://scipy.org/>`_.
+#. `TorchVision <https://pytorch.org/vision/stable/>`_.
+#. `mrcfile <https://pypi.org/project/mrcfile/>`_.
+#. `tqdm <https://pypi.org/project/tqdm/>`_.
 
 Download this repository
 ------------------------
@@ -58,35 +56,35 @@ Navigate to the cloned repository and install the module
 
 Generate model file to simulate cryo-EM particles
 -------------------------------------------------
-.. code:: bash
+.. code-block:: bash
 
     make_torch_models \
         --pdb_files path_to_pdb_1.pdb path_to_pdb_2.pdb ... \
         --save_path path_to_save_models.pt \
         --atom_selection "name CA"
 
-Training an amortized posterior model
---------------------------------------
-.. code:: bash
+Training classifier for amortized inference
+-------------------------------------
+.. code-block:: bash
 
     train_classifier \
         --image_config_file path_to_simulation_config_file.json \
-        --train_config_file path_to_train_config_file.json\
+        --train_config_file path_to_train_config_file.json \
         --epochs 150 \
-        --estimator_file posterior.estimator \
+        --estimator_file path_to_estimator_file.pt \
         --loss_file posterior.loss \
         --n_workers 4 \
         --simulation_batch_size 5120 \
         --train_device cuda
 
+Inference on cryo-EM particles
+------------------------------
+.. code-block:: bash
 
-Inference on experimental cryo-EM particles
--------------------------------------------
-.. code:: bash
     classifier_inference \
         --folder_with_mrcs path_to_folder_with_mrc_files \
         --estimator_config path_to_estimator_config_file.json \
-        --estimator_weights path_to_estimator_weights \
+        --estimator_weights path_to_estimator_weights.pt \
         --output_dir path_to_save_inference_results \
         --file_name inference_results.pt \
         --max_batch_size 256 \
