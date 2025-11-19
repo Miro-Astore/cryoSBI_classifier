@@ -7,7 +7,7 @@ from cryo_sbi.wpa_simulator.image_generation import project_density
 from cryo_sbi.wpa_simulator.noise import add_noise
 from cryo_sbi.wpa_simulator.normalization import gaussian_normalize_image
 from cryo_sbi.inference.priors import get_image_priors
-from cryo_sbi.wpa_simulator.check_image_config import check_image_params
+from cryo_sbi.utils.check_config import check_image_params
 
 
 def cryo_em_simulator(

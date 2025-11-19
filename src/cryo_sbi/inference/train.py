@@ -12,9 +12,9 @@ import logging
 from cryo_sbi.inference.priors import get_image_priors, PriorLoader
 from cryo_sbi.inference.models.build_models import build_classifier
 from cryo_sbi.wpa_simulator.cryo_em_simulator import cryo_em_simulator
-from cryo_sbi.wpa_simulator.check_image_config import check_image_params
-from cryo_sbi.inference.check_train_config import check_train_params
+from cryo_sbi.utils.check_config import check_train_params, check_image_params
 
+torch.backends.cudnn.benchmark = True
 
 def setup_logging(debug: bool = False):
     logging.basicConfig(
@@ -24,10 +24,6 @@ def setup_logging(debug: bool = False):
 
 
 class ClassifierLoss(nn.Module):
-    """
-    Loss function for the classifier.
-    """
-
     def __init__(
         self, estimator: torch.nn.Module, label_smoothing: float = 0.0
     ) -> None:
@@ -36,16 +32,6 @@ class ClassifierLoss(nn.Module):
         self.label_smoothing = label_smoothing
 
     def forward(self, indices: torch.Tensor, images: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the loss function.
-
-        Args:
-            indices (torch.Tensor): Indices of the models.
-            images (torch.Tensor): Simulated images.
-
-        Returns:
-            torch.Tensor: Loss value.
-        """
         logits = self.estimator(images)
         return torch.nn.functional.cross_entropy(
             logits, indices, reduction="mean", label_smoothing=self.label_smoothing
@@ -53,10 +39,6 @@ class ClassifierLoss(nn.Module):
 
 
 class GDStep:
-    """
-    Gradient descent step with optional gradient clipping and learning rate scheduling. (Adapted from lampe package)
-    """
-
     def __init__(
         self,
         optimizer: torch.optim.Optimizer,
@@ -190,7 +172,7 @@ def train_classifier(
     )
     mean_loss = []
 
-    print("Training neural netowrk:")
+    logging.info("Starting training loop")
     estimator.train()
     with tqdm(range(epochs), unit="epoch") as tq:
         for epoch in tq:

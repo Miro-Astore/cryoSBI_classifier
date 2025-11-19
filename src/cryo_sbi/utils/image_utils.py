@@ -217,6 +217,27 @@ class GaussianLowPassFilter:
         return reconstructed
 
 
+class Identity:
+    """
+    Identity transform that returns the input image unchanged.
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    def __call__(self, images: torch.Tensor) -> torch.Tensor:
+        """
+        Returns the input image unchanged.
+
+        Args:
+            images (torch.Tensor): Image of shape (n_channels, n_pixels, n_pixels).
+
+        Returns:
+            images (torch.Tensor): Unchanged image.
+        """
+        return images
+
+
 class NormalizeIndividual:
     """
     Normalize an image by subtracting the mean and dividing by the standard deviation.

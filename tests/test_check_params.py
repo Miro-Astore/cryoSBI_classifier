@@ -1,6 +1,5 @@
 import json
-from cryo_sbi.wpa_simulator.check_image_config import check_image_params
-from cryo_sbi.inference.check_train_config import check_train_params
+from cryo_sbi.utils.check_config import check_image_params, check_train_params
 
 
 def test_check_train_params_mlp():

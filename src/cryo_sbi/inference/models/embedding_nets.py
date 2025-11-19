@@ -1,8 +1,5 @@
 import torch.nn as nn
 import torchvision.models as models
-import torchvision.transforms as transforms
-
-from cryo_sbi.utils.image_utils import LowPassFilter, Mask
 
 
 EMBEDDING_NETS = {}

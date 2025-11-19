@@ -1,21 +1,10 @@
 from typing import Tuple
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
 
 CLASSIFIER = {}
-
-
 def add_classifier(name):
-    """
-    Add embedding net to EMBEDDING_NETS dict
-
-    Args:
-        name (str): name of embedding net
-
-    Returns:
-        add (function): function to add embedding net to EMBEDDING_NETS dict
-    """
 
     def add(class_):
         CLASSIFIER[name] = class_
@@ -92,8 +81,8 @@ class ClassifierWithEmbedding(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.embedding(x))
 
-    def prob(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.softmax(self.forward(x))
+    def probs(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.softmax(self.forward(x), dim=1)
 
     def logits_embedding(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         embeddings = self.embedding(x)

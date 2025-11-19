@@ -23,22 +23,19 @@ default_train_config = {
 def check_train_params(config: dict) -> dict:
     merged = deepcopy(default_train_config)
 
-    # Merge top-level keys
     for k, v in config.items():
         if k == "CLASSIFIER" and isinstance(v, dict):
-            # Only merge default if MODEL or NUM_CLASSES missing
             has_model = "MODEL" in v
             has_num_classes = "NUM_CLASSES" in v
             if not (has_model and has_num_classes):
                 merged[k].update(v)
             else:
-                merged[k] = v  # leave user CLASSIFIER as is
+                merged[k] = v
         elif k == "EMBEDDING" and isinstance(v, dict):
             merged[k].update(v)
         else:
             merged[k] = v
 
-    # Ensure required keys
     emb = merged.get("EMBEDDING", {})
     assert "MODEL" in emb, "EMBEDDING.MODEL required"
     assert "OUT_DIM" in emb, "EMBEDDING.OUT_DIM required"
@@ -48,3 +45,21 @@ def check_train_params(config: dict) -> dict:
     assert "NUM_CLASSES" in clf, "CLASSIFIER.NUM_CLASSES required"
 
     return merged
+
+def check_image_params(config: dict) -> dict:
+    needed_keys = [
+        "N_PIXELS",
+        "PIXEL_SIZE",
+        "SIGMA",
+        "SHIFT",
+        "DEFOCUS",
+        "SNR",
+        "MODEL_FILE",
+        "AMP",
+        "B_FACTOR",
+    ]
+
+    for key in needed_keys:
+        assert key in config.keys(), f"Please provide a value for {key}"
+
+    return config

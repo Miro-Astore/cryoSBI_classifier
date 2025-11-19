@@ -94,6 +94,14 @@ def test_mrc_to_tensor():
     assert image.shape == (5, 5)
 
 
+def test_mrc_to_tensor_copy():
+    image_path = "tests/data/test.mrc"
+    image = iu.mrc_to_tensor(image_path, copy=True)
+
+    assert isinstance(image, torch.Tensor)
+    assert image.shape == (5, 5)
+
+
 def test_image_whithening():
     whitening_transform = iu.WhitenImage(100)
     images = torch.randn((1, 100, 100))
@@ -106,3 +114,11 @@ def test_image_whithening_batched():
     images = torch.randn((10, 100, 100))
     images_whitened = whitening_transform(images)
     assert images_whitened.shape == (10, 100, 100)
+
+
+def test_identity_transform():
+    identity_transform = iu.Identity()
+    images = torch.randn((1, 100, 100))
+    transformed_images = identity_transform(images)
+    assert torch.allclose(images, transformed_images)
+

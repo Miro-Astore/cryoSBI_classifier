@@ -77,16 +77,7 @@ class IndexPrior:
 def get_image_priors(
     num_models: int, num_representatives: int, image_config: dict, device="cuda"
 ) -> zuko.distributions.BoxUniform:
-    """
-    Return uniform prior in 1d from 0 to 19
 
-    Args:
-        num_models (int): number of models in structure prior
-        num_representatives (int): number of representatives for each model bin
-
-    Returns:
-        zuko.distributions.BoxUniform: prior
-    """
     if isinstance(image_config["SIGMA"], list) and len(image_config["SIGMA"]) == 2:
         lower = torch.tensor(
             [[image_config["SIGMA"][0]]], dtype=torch.float32, device=device
