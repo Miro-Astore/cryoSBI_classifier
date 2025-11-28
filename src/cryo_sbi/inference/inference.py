@@ -38,7 +38,7 @@ def classifier_inference(
         max_batch_size,
         whitening: bool = True,
     ):
-    logger = setup_logging()
+    setup_logging()
 
     assert os.path.exists(folder_with_mrcs), f"Folder {folder_with_mrcs} does not exist."
     assert os.path.exists(estimator_weights), f"Estimator weights {estimator_weights} do not exist."
@@ -52,7 +52,7 @@ def classifier_inference(
     ])
 
     particle_paths = get_file_list(folder_with_mrcs)
-    logger.info(f"Found {len(particle_paths)} .mrc files.")
+    logging.info(f"Found {len(particle_paths)} .mrc files.")
 
     classifier = cls_utils.load_classifier(
         estimator_config,
@@ -99,4 +99,4 @@ def classifier_inference(
 
     torch.save(likelihoods, os.path.join(output_dir, f"likelihoods_{file_name}"))
     torch.save(embeddings, os.path.join(output_dir, f"embeddings_{file_name}"))
-    logger.info(f"Inference completed in {duration:.2f} seconds for {likelihoods.shape[0]} images.")
+    logging.info(f"Inference completed in {duration:.2f} seconds for {likelihoods.shape[0]} images.")

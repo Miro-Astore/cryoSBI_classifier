@@ -27,7 +27,7 @@ def pdb_parser_(fname: str, atom_selection: str = "all") -> torch.tensor:
     return model
 
 
-def make_torch_models(pdb_files: list[str], save_path: str, atom_selection: str = "all") -> None:
+def make_torch_models(pdb_files: list[str], output_file: str, atom_selection: str = "all") -> None:
     """
     Converts a list of pdb files to a single torch tensor and saves it to disk.
 
@@ -35,7 +35,7 @@ def make_torch_models(pdb_files: list[str], save_path: str, atom_selection: str 
     ----------
     pdb_files : list[str]
         List of paths to pdb files.
-    save_path : str
+    output_file : str
         Path to save the torch tensor.
     """
 
@@ -51,4 +51,4 @@ def make_torch_models(pdb_files: list[str], save_path: str, atom_selection: str 
     for i, model in enumerate(models):
         models_torch[i, :, : model.shape[1]] = model
 
-    torch.save(models_torch, save_path)
+    torch.save(models_torch, output_file)

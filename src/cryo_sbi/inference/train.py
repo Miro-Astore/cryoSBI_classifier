@@ -2,6 +2,7 @@ import os
 from typing import Union
 import json
 import torch
+import time
 import torch.nn as nn
 import numpy as np
 import torch.optim as optim
@@ -173,6 +174,7 @@ def train_classifier(
     mean_loss = []
 
     logging.info("Starting training loop")
+    start_time = time.time()
     estimator.train()
     with tqdm(range(epochs), unit="epoch") as tq:
         for epoch in tq:
@@ -223,5 +225,7 @@ def train_classifier(
             if epoch % saving_frequency == 0:
                 torch.save(estimator.state_dict(), estimator_file + f"_epoch={epoch}")
 
+    end_time = time.time()
+    logging.info(f"Training completed in {end_time - start_time:.2f} seconds")
     torch.save(estimator.state_dict(), estimator_file)
     torch.save(torch.tensor(mean_loss), loss_file)
