@@ -8,9 +8,9 @@ default_train_config = {
     "CLASSIFIER": {
         "MODEL": "MLP",
         "NUM_CLASSES": 44,
-        "NUM_LAYERS": 8,
+        "NUM_LAYERS": 3,
         "NODES_PER_LAYER": 128,
-        "DROPOUT": 0.05,
+        "DROPOUT": 0.1,
     },
     "LEARNING_RATE": 0.0005,
     "ONE_CYCLE_SCHEDULER": True,

@@ -5,6 +5,9 @@ import torch.nn as nn
 
 CLASSIFIER = {}
 def add_classifier(name):
+    """
+    Decorator to add classifier models to the CLASSIFIER registry.
+    """
 
     def add(class_):
         CLASSIFIER[name] = class_

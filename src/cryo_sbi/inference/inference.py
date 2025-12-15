@@ -18,6 +18,16 @@ def setup_logging(debug: bool = False):
 
 
 def get_file_list(folder_with_mrcs):
+    """
+    Get a sorted list of .mrc file paths from the specified folder.
+
+    Args:
+        folder_with_mrcs (str): Path to the folder containing .mrc files.
+
+    Returns:
+        List[str]: Sorted list of .mrc file paths.
+    """
+
     particle_paths = [os.path.join(folder_with_mrcs, f) for f in os.listdir(folder_with_mrcs) if f.endswith(".mrc")]
     try:
         particle_paths = sorted(particle_paths, key=lambda x: int(os.path.basename(x).split("_")[1]))
@@ -53,6 +63,8 @@ def classifier_inference(
 
     particle_paths = get_file_list(folder_with_mrcs)
     logging.info(f"Found {len(particle_paths)} .mrc files.")
+    logging.info(f"Analyzing mrc files :\n" + "\n".join([p.split('/')[-1] for p in particle_paths]) + "\n")
+
 
     classifier = cls_utils.load_classifier(
         estimator_config,

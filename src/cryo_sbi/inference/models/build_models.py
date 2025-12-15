@@ -8,6 +8,18 @@ from cryo_sbi.inference.models.embedding_nets import EMBEDDING_NETS
 
 
 def build_classifier(config: dict) -> nn.Module:
+    """
+    Builds a classifier model with an embedding network based on the provided configuration.
+
+    Args:
+        config (dict): Configuration dictionary containing settings for the embedding
+                       network and classifier.
+        
+    Returns:
+        nn.Module: An instance of ClassifierWithEmbedding combining the embedding
+                     network and classifier.
+    """
+    
     emb_cfg = config["EMBEDDING"]
     emb_model = emb_cfg["MODEL"]
     emb_kwargs = {k.lower(): v for k, v in emb_cfg.items() if k != "MODEL"}
