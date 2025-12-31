@@ -42,7 +42,7 @@ Download this repository
 ------------------------
 .. code:: bash
 
-    git clone https://github.com/flatironinstitute/cryoSBI.git
+    git clone https://github.com/Miro-Astore/cryoSBI_classifier.git
 
 Navigate to the cloned repository and install the module
 --------------------------------------------------------
