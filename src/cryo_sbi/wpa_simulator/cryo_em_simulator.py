@@ -1,4 +1,3 @@
-from typing import Union, Callable
 import json
 import numpy as np
 import torch
@@ -8,7 +7,7 @@ from cryo_sbi.wpa_simulator.image_generation import project_density
 from cryo_sbi.wpa_simulator.noise import add_noise
 from cryo_sbi.wpa_simulator.normalization import gaussian_normalize_image
 from cryo_sbi.inference.priors import get_image_priors
-from cryo_sbi.wpa_simulator.validate_image_config import check_image_params
+from cryo_sbi.utils.check_config import check_image_params
 
 
 def cryo_em_simulator(
@@ -43,7 +42,10 @@ def cryo_em_simulator(
     Returns:
         torch.Tensor: A tensor of the simulated cryo-EM image.
     """
-    models_selected = models[index.round().long().flatten()]
+    if index.ndim == 2:
+        models_selected = models[index[:, 0], index[:, 1]]
+    elif index.ndim == 1:
+        models_selected = models[index]
     image = project_density(
         models_selected,
         quaternion,
@@ -63,7 +65,9 @@ class CryoEmSimulator:
         self._device = device
         self._load_params(config_fname)
         self._load_models()
-        self._priors = get_image_priors(self.max_index, self._config, device=device)
+        self._priors = get_image_priors(
+            self.num_models, self.num_representatives, self._config, device=device
+        )
         self._num_pixels = torch.tensor(
             self._config["N_PIXELS"], dtype=torch.float32, device=device
         )
@@ -116,18 +120,21 @@ class CryoEmSimulator:
 
         self._models = models
 
-        assert self._models.ndim == 3, "Models are not of shape (models, 3, atoms)."
-        assert self._models.shape[1] == 3, "Models are not of shape (models, 3, atoms)."
+        if self._models.ndim == 3:
+            self.num_models = self._models.shape[0]
+            self.num_representatives = None
+        elif self._models.ndim == 4:
+            self.num_models = self._models.shape[0]
+            self.num_representatives = self._models.shape[1]
+        else:
+            raise ValueError(
+                "Models are not of shape (models, 3, atoms) or (models, representatives, 3, atoms)."
+            )
 
-    @property
-    def max_index(self) -> int:
-        """
-        Returns the maximum index of the model file.
-
-        Returns:
-            int: Maximum index of the model file.
-        """
-        return len(self._models) - 1
+        assert (
+            self._models.ndim == 3 or self._models.ndim == 4
+        ), "Models are not of shape (models, 3, atoms) or (models, representatives, 3, atoms)."
+        assert self._models.shape[-2] == 3, "Models are not of shape (..., 3, atoms)."
 
     def simulate(self, num_sim, indices=None, return_parameters=False, batch_size=None):
         """
@@ -150,12 +157,6 @@ class CryoEmSimulator:
             assert isinstance(
                 indices, torch.Tensor
             ), "Indices are not a torch.tensor, converting to torch.tensor."
-            assert (
-                indices.dtype == torch.float32
-            ), "Indices are not a torch.float32, converting to torch.float32."
-            assert (
-                indices.ndim == 2
-            ), "Indices are not a 2D tensor, converting to 2D tensor. With shape (batch_size, 1)."
             parameters[0] = indices
 
         images = []

@@ -15,17 +15,18 @@ authors = [
 
 version = "0.2"
 dependencies = [
-    "lampe",
     "zuko",
     "torch",
     "numpy", 
     "matplotlib",
     "scipy",
     "torchvision",
-    "mrcfile"
+    "mrcfile",
+    "tqdm",
 ]
 
 
 [project.scripts]
-train_npe_model = "cryo_sbi.inference.command_line_tools:cl_npe_train_no_saving"
-model_to_tensor = "cryo_sbi.utils.command_line_tools:cl_models_to_tensor"
+train_classifier = "cryo_sbi.utils.command_line_tools:cl_train"
+make_torch_models = "cryo_sbi.utils.command_line_tools:cl_make_torch_models"
+classifier_inference = "cryo_sbi.utils.command_line_tools:cl_inference"

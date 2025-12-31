@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 
@@ -59,6 +58,60 @@ def project_density(
     pixel_size: float,
 ) -> torch.Tensor:
     """
+    Generate a 2D projections from a set of coordinates. Note that the coordinates are expected to be in the shape of (batch_size, 3, num_atoms),
+    Nan or Inf values in the coordinates will be ignored in the projection, and can be used to simulate models with different number of atoms.
+
+    Args:
+        coords (torch.Tensor): Coordinates of the atoms in the images
+        sigma (float): Standard deviation of the Gaussian function used to model electron density.
+        num_pixels (int): Number of pixels along one image size.
+        pixel_size (float): Pixel size in Angstrom
+
+    Returns:
+        image (torch.Tensor): Images generated from the coordinates
+    """
+
+    num_batch, _, num_atoms = coords.shape
+    mask = torch.isfinite(coords).all(dim=1).float()
+    num_valid_atoms = mask.sum(dim=1, keepdim=True)
+    norm = 1 / (2 * torch.pi * sigma.squeeze() ** 2 * num_valid_atoms.squeeze())
+
+    grid_min = -pixel_size * num_pixels * 0.5
+    grid_max = pixel_size * num_pixels * 0.5
+
+    rot_matrix = gen_rot_matrix(quats)
+    grid = torch.arange(grid_min, grid_max, pixel_size, device=coords.device)[
+        0 : num_pixels.long()
+    ].repeat(
+        num_batch, 1
+    )  # [0: num_pixels.long()] is needed due to single precision error in some cases
+
+    coords_rot = torch.bmm(rot_matrix, coords)
+    coords_rot[:, :2, :] += shift.unsqueeze(-1)
+
+    gauss_x = torch.exp_(
+        -0.5 * (((grid.unsqueeze(-1) - coords_rot[:, 0, :].unsqueeze(1)) / sigma) ** 2)
+    )
+    gauss_y = torch.exp_(
+        -0.5 * (((grid.unsqueeze(-1) - coords_rot[:, 1, :].unsqueeze(1)) / sigma) ** 2)
+    ).transpose(1, 2)
+
+    gauss_x = torch.nan_to_num(gauss_x, nan=0.0, posinf=0.0, neginf=0.0)
+    gauss_y = torch.nan_to_num(gauss_y, nan=0.0, posinf=0.0, neginf=0.0)
+    image = torch.bmm(gauss_x, gauss_y) * norm.reshape(-1, 1, 1)
+
+    return image
+
+
+'''def project_density(
+    coords: torch.Tensor,
+    quats: torch.Tensor,
+    sigma: torch.Tensor,
+    shift: torch.Tensor,
+    num_pixels: int,
+    pixel_size: float,
+) -> torch.Tensor:
+    """
     Generate a 2D projections from a set of coordinates.
 
     Args:
@@ -95,60 +148,5 @@ def project_density(
     ).transpose(1, 2)
 
     image = torch.bmm(gauss_x, gauss_y) * norm.reshape(-1, 1, 1)
-
-    return image
-
-
-'''def project_density(
-    atomic_model: torch.Tensor,
-    quats: torch.Tensor,
-    delta_sigma: torch.Tensor,
-    shift: torch.Tensor,
-    num_pixels: int,
-    pixel_size: float,
-) -> torch.Tensor:
-    """
-    Generate a 2D projections from a set of coordinates.
-
-    Args:
-        atomic_model (torch.Tensor): Coordinates of the atoms in the images
-        res (float): resolution of the images in Angstrom
-        num_pixels (int): Number of pixels along one image size.
-        pixel_size (float): Pixel size in Angstrom
-
-    Returns:
-        image (torch.Tensor): Images generated from the coordinates
-    """
-
-    num_batch, _, num_atoms = atomic_model.shape
-
-    variances = atomic_model[:, 4, :] * delta_sigma[:, 0]
-    amplitudes = atomic_model[:, 3, :] / torch.sqrt((2 * torch.pi * variances))
-
-    grid_min = -pixel_size * num_pixels * 0.5
-    grid_max = pixel_size * num_pixels * 0.5
-
-    rot_matrix = gen_rot_matrix(quats)
-    grid = torch.arange(grid_min, grid_max, pixel_size, device=atomic_model.device)[
-        0 : num_pixels.long()
-    ].repeat(
-        num_batch, 1
-    )  # [0: num_pixels.long()] is needed due to single precision error in some cases
-
-    coords_rot = torch.bmm(rot_matrix, atomic_model[:, :3, :])
-    coords_rot[:, :2, :] += shift.unsqueeze(-1)
-
-    gauss_x = torch.exp_(
-        -((grid.unsqueeze(-1) - coords_rot[:, 0, :].unsqueeze(1)) ** 2)
-        / variances.unsqueeze(1)
-    ) * amplitudes.unsqueeze(1)
-
-    gauss_y = torch.exp(
-        -((grid.unsqueeze(-1) - coords_rot[:, 1, :].unsqueeze(1)) ** 2)
-        / variances.unsqueeze(1)
-    ) * amplitudes.unsqueeze(1)
-
-    image = torch.bmm(gauss_x, gauss_y.transpose(1, 2))  # * norms
-    image /= torch.norm(image, dim=[-2, -1]).reshape(-1, 1, 1) # do we need this normalization?
 
     return image'''

@@ -1,147 +1,99 @@
+from typing import Tuple
 import torch
 import torch.nn as nn
-import zuko
-from lampe.inference import NPE, NRE
 
 
-class Standardize(nn.Module):
+CLASSIFIER = {}
+def add_classifier(name):
     """
-    Module to standardize inputs and retransform them to the original space
-
-    Args:
-        mean (torch.Tensor): mean of the data
-        std (torch.Tensor): standard deviation of the data
-
-    Returns:
-        standardized (torch.Tensor): standardized data
+    Decorator to add classifier models to the CLASSIFIER registry.
     """
 
-    # Code adapted from :https://github.com/mackelab/sbi/blob/main/sbi/utils/sbiutils.py
-    def __init__(self, mean: float, std: float) -> None:
-        super(Standardize, self).__init__()
-        mean, std = map(torch.as_tensor, (mean, std))
-        self.mean = mean
-        self.std = std
-        self.register_buffer("_mean", mean)
-        self.register_buffer("_std", std)
+    def add(class_):
+        CLASSIFIER[name] = class_
+        return class_
 
-    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
-        """
-        Standardize the input tensor
-
-        Args:
-            tensor (torch.Tensor): input tensor
-
-        Returns:
-            standardized (torch.Tensor): standardized tensor
-        """
-
-        return (tensor - self._mean) / self._std
-
-    def transform(self, tensor: torch.Tensor) -> torch.Tensor:
-        """
-        Transform the standardized tensor back to the original space
-
-        Args:
-            tensor (torch.Tensor): input tensor
-
-        Returns:
-            retransformed (torch.Tensor): retransformed tensor
-        """
-
-        return (tensor * self._std) + self._mean
+    return add
 
 
-class NPEWithEmbedding(nn.Module):
-    """Neural Posterior Estimation with embedding net
+class BaseClassifier(nn.Module):
+    def __init__(self, input_dim, num_classes):
+        super().__init__()
+        self.input_dim = input_dim
+        self.num_classes = num_classes
 
-    Attributes:
-        npe (NPE): NPE model
-        embedding (nn.Module): embedding net
-        standardize (Standardize): standardization module
-    """
+    def forward(self, z):
+        raise NotImplementedError("Forward method not implemented!")
 
+
+@add_classifier("MLP")
+class MLPClassifier(BaseClassifier):
+    def __init__(
+        self,
+        input_dim,
+        num_classes,
+        num_layers=3,
+        nodes_per_layer=128,
+        activation=nn.ReLU,
+        dropout=0.0,
+    ):
+        super().__init__(input_dim, num_classes)
+
+        self.classifier = nn.ModuleList()
+        for i in range(num_layers):
+            if i == 0:
+                self.classifier.append(nn.Linear(input_dim, nodes_per_layer))
+            else:
+                self.classifier.append(nn.Linear(nodes_per_layer, nodes_per_layer))
+                if dropout > 0.0:
+                    self.classifier.append(nn.Dropout(dropout))
+            self.classifier.append(activation())
+        self.classifier.append(nn.Linear(nodes_per_layer, num_classes))
+        self.classifier = nn.Sequential(*self.classifier)
+
+    def forward(self, z, tau=1.0):
+        return self.classifier(z) / tau
+
+
+@add_classifier("PROTOTYPE")
+class PrototypeClassifier(BaseClassifier):
+    def __init__(self, input_dim, num_classes, noise_scale=0.0):
+        super().__init__(input_dim, num_classes)
+
+        self.input_dim = input_dim
+        self.num_classes = num_classes
+        self.noise_scale = noise_scale
+        self.prototypes = nn.Parameter(torch.randn(self.num_classes, self.input_dim))
+
+    def forward(self, z, tau=1.0):
+        if self.training and self.noise_scale > 0.0:
+            prototypes = self.prototypes + torch.randn_like(self.prototypes) * self.noise_scale
+        else:
+            prototypes = self.prototypes
+
+        z2 = (z**2).sum(dim=1, keepdim=True)
+        p2 = (prototypes**2).sum(dim=1).unsqueeze(0)
+        logits = -(z2 + p2 - 2 * z @ prototypes.T) / tau
+
+        return logits
+
+
+class ClassifierWithEmbedding(nn.Module):
     def __init__(
         self,
         embedding_net: nn.Module,
-        output_embedding_dim: int,
-        num_transforms: int = 4,
-        num_hidden_flow: int = 2,
-        hidden_flow_dim: int = 128,
-        flow: nn.Module = zuko.flows.MAF,
-        theta_shift: float = 0.0,
-        theta_scale: float = 1.0,
-        **kwargs,
+        classifier: nn.Module,
     ) -> None:
-        """
-        Neural Posterior Estimation with embedding net.
-
-        Args:
-            embedding_net (nn.Module): embedding net
-            output_embedding_dim (int): output embedding dimension
-            num_transforms (int, optional): number of transforms. Defaults to 4.
-            num_hidden_flow (int, optional): number of hidden layers in flow. Defaults to 2.
-            hidden_flow_dim (int, optional): hidden dimension in flow. Defaults to 128.
-            flow (nn.Module, optional): flow. Defaults to zuko.flows.MAF.
-            theta_shift (float, optional): Shift of the theta for standardization. Defaults to 0.0.
-            theta_scale (float, optional): Scale of the theta for standardization. Defaults to 1.0.
-            kwargs: additional arguments for the flow
-
-        Returns:
-            None
-        """
-
         super().__init__()
-
-        self.npe = NPE(
-            1,
-            output_embedding_dim,
-            transforms=num_transforms,
-            build=flow,
-            hidden_features=[*[hidden_flow_dim] * num_hidden_flow, 128, 64],
-            **kwargs,
-        )
-
+        self.classifier = classifier()
         self.embedding = embedding_net()
-        self.standardize = Standardize(theta_shift, theta_scale)
 
-    def forward(self, theta: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the NPE model
+    def forward(self, x: torch.Tensor, tau=1.0) -> torch.Tensor:
+        return self.classifier(self.embedding(x), tau=tau)
 
-        Args:
-            theta (torch.Tensor): Conformational parameters.
-            x (torch.Tensor): Image to condition the posterior on.
-
-        Returns:
-            torch.Tensor: Log probability of the posterior.
-        """
-
-        return self.npe(self.standardize(theta), self.embedding(x))
-
-    def flow(self, x: torch.Tensor):
-        """
-        Conditions the posterior on an image.
-
-        Args:
-            x (torch.Tensor): Image to condition the posterior on.
-
-        Returns:
-            zuko.flows.Flow: The posterior distribution.
-        """
-        return self.npe.flow(self.embedding(x))
-
-    def sample(self, x: torch.Tensor, shape=(1,)) -> torch.Tensor:
-        """
-        Generate samples from the posterior distribution.
-
-        Args:
-            x (torch.Tensor): Image to condition the posterior on.
-            shape (tuple, optional): Shape of the samples. Defaults to (1,).
-
-        Returns:
-            torch.Tensor: Samples from the posterior distribution.
-        """
-
-        samples_standardized = self.flow(x).sample(shape)
-        return self.standardize.transform(samples_standardized)
+    def probs(self, x: torch.Tensor, tau=1.0) -> torch.Tensor:
+        return torch.nn.functional.softmax(self.forward(x, tau=tau) / tau, dim=1)
+    def logits_embedding(self, x: torch.Tensor, tau=1.0) -> Tuple[torch.Tensor, torch.Tensor]:
+        embeddings = self.embedding(x)
+        logits = self.classifier(embeddings, tau=tau)
+        return logits, embeddings

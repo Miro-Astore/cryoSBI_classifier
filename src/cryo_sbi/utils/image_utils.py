@@ -1,5 +1,7 @@
+import copy
 import math
 from typing import List, Union
+from functools import lru_cache
 import numpy as np
 import torch
 import torchvision.transforms as transforms
@@ -8,7 +10,9 @@ import mrcfile
 from tqdm import tqdm
 
 
-def circular_mask(n_pixels: int, radius: int, inside: bool = True) -> torch.Tensor:
+def circular_mask(
+    n_pixels: int, radius: int, inside: bool = True, device="cpu"
+) -> torch.Tensor:
     """
     Create a circular mask for a given image size and radius.
 
@@ -21,7 +25,9 @@ def circular_mask(n_pixels: int, radius: int, inside: bool = True) -> torch.Tens
         mask (torch.Tensor): Mask of shape (n_pixels, n_pixels).
     """
 
-    grid = torch.linspace(-0.5 * (n_pixels - 1), 0.5 * (n_pixels - 1), n_pixels)
+    grid = torch.linspace(
+        -0.5 * (n_pixels - 1), 0.5 * (n_pixels - 1), n_pixels, device=device
+    )
     r_2d = grid[None, :] ** 2 + grid[:, None] ** 2
 
     if inside is True:
@@ -211,6 +217,27 @@ class GaussianLowPassFilter:
         return reconstructed
 
 
+class Identity:
+    """
+    Identity transform that returns the input image unchanged.
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    def __call__(self, images: torch.Tensor) -> torch.Tensor:
+        """
+        Returns the input image unchanged.
+
+        Args:
+            images (torch.Tensor): Image of shape (n_channels, n_pixels, n_pixels).
+
+        Returns:
+            images (torch.Tensor): Unchanged image.
+        """
+        return images
+
+
 class NormalizeIndividual:
     """
     Normalize an image by subtracting the mean and dividing by the standard deviation.
@@ -242,7 +269,7 @@ class NormalizeIndividual:
         return transforms.functional.normalize(images, mean=mean, std=std)
 
 
-def mrc_to_tensor(image_path: str) -> torch.Tensor:
+def mrc_to_tensor(image_path: str, copy: bool = False) -> torch.Tensor:
     """
     Convert an MRC file to a tensor.
 
@@ -254,9 +281,13 @@ def mrc_to_tensor(image_path: str) -> torch.Tensor:
     """
 
     assert isinstance(image_path, str), "image path needs to be a string"
-    with mrcfile.open(image_path) as mrc:
-        image = mrc.data
-    return torch.from_numpy(image)
+
+    with mrcfile.mmap(image_path, permissive=True) as mrc:
+        data = mrc.data
+        if copy:
+            data = np.copy(data)
+
+    return torch.from_numpy(data)
 
 
 class MRCtoTensor:
@@ -281,7 +312,9 @@ class MRCtoTensor:
         return mrc_to_tensor(image_path)
 
 
-def estimate_noise_psd(images: torch.Tensor, image_size: int, mask_radius : Union[int, None] = None) -> torch.Tensor:
+def estimate_noise_psd(
+    images: torch.Tensor, image_size: int, mask_radius: Union[int, None] = None
+) -> torch.Tensor:
     """
     Estimates the power spectral density (PSD) of the noise in a set of images.
 
@@ -294,14 +327,14 @@ def estimate_noise_psd(images: torch.Tensor, image_size: int, mask_radius : Unio
                       and W is the width of the images.
 
     """
-    if mask_radius is  None:
+    if mask_radius is None:
         mask_radius = image_size // 2
-    mask = circular_mask(image_size, mask_radius, inside=False)
+    mask = circular_mask(image_size, mask_radius, inside=False, device=images.device)
     denominator = mask.sum() * images.shape[0]
     images_masked = images * mask
     mean_est = images_masked.sum() / denominator
     image_masked_fft = torch.fft.fft2(images_masked)
-    noise_psd_est = torch.sum(torch.abs(image_masked_fft)**2, dim=[0]) / denominator
+    noise_psd_est = torch.sum(torch.abs(image_masked_fft) ** 2, dim=[0]) / denominator
     noise_psd_est[image_size // 2, image_size // 2] -= mean_est
 
     return noise_psd_est
@@ -310,13 +343,13 @@ def estimate_noise_psd(images: torch.Tensor, image_size: int, mask_radius : Unio
 class WhitenImage:
     """
     Whiten an image by dividing by the square root of the noise PSD.
-    
+
     Args:
         image_size (int): Size of image in pixels.
         mask_radius (int, optional): Radius of the mask. Defaults to None.
-    
+
     """
-    
+
     def __init__(self, image_size: int, mask_radius: Union[int, None] = None) -> None:
         self.image_size = image_size
         self.mask_radius = mask_radius
@@ -327,24 +360,59 @@ class WhitenImage:
         """
         noise_psd = estimate_noise_psd(images, self.image_size, self.mask_radius)
         return noise_psd
-    
+
     def __call__(self, images: torch.Tensor) -> torch.Tensor:
         """
         Whiten an image by dividing by the square root of the noise PSD.
-        
+
         Args:
             image (torch.Tensor): Image of shape (n_pixels, n_pixels).
-        
+
         Returns:
             image (torch.Tensor): Whitened image.
         """
 
-        assert images.ndim == 3, "Image should have shape (num_images , n_pixels, n_pixels)"
+        assert (
+            images.ndim == 3
+        ), "Image should have shape (num_images , n_pixels, n_pixels)"
         noise_psd = self._estimate_noise_psd(images) ** -0.5
         images_fft = torch.fft.fft2(images)
         images_fft = images_fft * noise_psd
         images = torch.fft.ifft2(images_fft).real
         return images
+
+
+class GaussianSpatialMask:
+    """
+    Applies a soft 2D Gaussian mask in the image domain to suppress edges and emphasize the center.
+    """
+
+    def __init__(self, image_size: int, sigma: float):
+        self._image_size = image_size
+        self._sigma = sigma
+
+        grid = torch.linspace(
+            -0.5 * (image_size - 1), 0.5 * (image_size - 1), image_size
+        )
+        r_2d = grid[None, :] ** 2 + grid[:, None] ** 2
+        self._mask = torch.exp(-r_2d / (2 * sigma**2))
+
+    def __call__(self, image: torch.Tensor) -> torch.Tensor:
+        """
+        Applies the Gaussian spatial mask to an image.
+
+        Args:
+            image (torch.Tensor): Image of shape (n_pixels, n_pixels) or (n_channels, n_pixels, n_pixels).
+
+        Returns:
+            torch.Tensor: Masked image.
+        """
+        if len(image.shape) == 2:
+            return image * self._mask
+        elif len(image.shape) == 3:
+            return image * self._mask.unsqueeze(0)
+        else:
+            raise NotImplementedError("Image must be 2D or 3D tensor")
 
 
 class MRCdataset:
@@ -361,27 +429,31 @@ class MRCdataset:
         __getitem__: Returns tensor of the MRC file at the given index.
     """
 
-    def __init__(self, image_paths: List[str]):
+    def __init__(self, image_paths: List[str], cache_size: int = 16):
         super().__init__()
         self.paths = image_paths
         self._num_paths = len(image_paths)
         self._index_map = None
+        self._mrc_to_tensor_cached = (
+            lru_cache(maxsize=cache_size)(mrc_to_tensor)
+            if cache_size > 0
+            else mrc_to_tensor
+        )
 
     def __len__(self):
         return self._num_paths
 
     def __getitem__(self, idx):
-        return idx, mrc_to_tensor(self.paths[idx])
+        """Returns tensor of the MRC file at the given index."""
+        return idx, self._mrc_to_tensor_cached(self.paths[idx], copy=True)
 
-    def _extract_num_particles(self, path):
-        future_mrc = mrcfile.open_async(path)
-        mrc = future_mrc.result()
-        data_shape = mrc.data.shape
-        # img_stack = mrc.is_image_stack()
-        num_images = data_shape[0] if len(data_shape) > 2 else 1
-        return num_images
+    @staticmethod
+    def _extract_num_particles(path):
+        with mrcfile.open(path, permissive=True, header_only=True) as mrc:
+            num_images = int(mrc.header.nz)
+            return num_images if num_images > 0 else 1
 
-    def build_index_map(self):
+    def build_index_map(self, method: str = "mrc"):
         """
         Builds a map of image indices to file paths and file indices.
         """
@@ -389,6 +461,14 @@ class MRCdataset:
             print("Index map already built.")
             return
 
+        if method == "mrc":
+            self._build_index_map_by_loading_mrc()
+        elif method == "star":
+            raise NotImplementedError("STAR file parsing not implemented yet.")
+        else:
+            raise ValueError("Method must be 'mrc' or 'star'.")
+
+    def _build_index_map_by_loading_mrc(self):
         self._path_index = []
         self._file_index = []
         print("Initalizing indexing...")
@@ -423,7 +503,9 @@ class MRCdataset:
             path (str): Path to load the index map.
         """
         index_map = np.load(path)
-        assert len(self.paths) == len(index_map["paths"]), "Number of paths do not match the index map."
+        assert len(self.paths) == len(
+            index_map["paths"]
+        ), "Number of paths do not match the index map."
         for path1, path2 in zip(self.paths, index_map["paths"]):
             assert path1 == path2, "Paths do not match the index map."
         self._path_index = index_map["path_index"]
@@ -441,14 +523,31 @@ class MRCdataset:
             self._index_map is not None
         ), "Index map not built. First call build_index_map() or load_index_map()"
         if isinstance(idx, int):
-            image = mrc_to_tensor(self.paths[self._path_index[idx]])
+            image = self._mrc_to_tensor_cached(self.paths[self._path_index[idx]])
             if image.ndim > 2:
                 return image[self._file_index[idx]]
         if isinstance(idx, (list, np.ndarray, torch.Tensor)):
             return [
-                mrc_to_tensor(self.paths[self._path_index[i]])[self._file_index[i]]
+                self._mrc_to_tensor_cached(self.paths[self._path_index[i]])[
+                    self._file_index[i]
+                ]
                 for i in idx
             ]
+
+    def get_path(self, idx: Union[int, list]) -> Union[str, List[str]]:
+        """
+        Returns the path of the image at the given global index.
+
+        Args:
+            idx (int, List): Global index of the image.
+        """
+        assert (
+            self._index_map is not None
+        ), "Index map not built. First call build_index_map() or load_index_map()"
+        if isinstance(idx, int):
+            return self.paths[self._path_index[idx]], self._file_index[idx]
+        if isinstance(idx, (list, np.ndarray, torch.Tensor)):
+            return [self.paths[self._path_index[i]] for i in idx], self._file_index[idx]
 
 
 class MRCloader(torch.utils.data.DataLoader):
@@ -461,4 +560,6 @@ class MRCloader(torch.utils.data.DataLoader):
     """
 
     def __init__(self, image_paths: List[str], **kwargs):
-        super().__init__(MRCdataset(image_paths), batch_size=None, **kwargs)
+        super().__init__(
+            MRCdataset(image_paths, cache_size=0), batch_size=None, **kwargs
+        )

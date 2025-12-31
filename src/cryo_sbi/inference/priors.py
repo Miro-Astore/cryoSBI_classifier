@@ -1,7 +1,7 @@
 import torch
 import zuko
 from torch.distributions.distribution import Distribution
-from torch.utils.data import DataLoader, Dataset, IterableDataset
+from torch.utils.data import DataLoader, IterableDataset
 
 
 def gen_quat() -> torch.Tensor:
@@ -23,18 +23,61 @@ def gen_quat() -> torch.Tensor:
     return quat
 
 
+class IndexPrior:
+    def __init__(
+        self, num_models: int, num_representatives: int = None, device="cpu"
+    ) -> None:
+        self.num_models = num_models
+        self.num_representatives = num_representatives
+        self.device = device
+
+        self.index_prior = torch.distributions.Categorical(
+            probs=torch.tensor(
+                [1 / self.num_models for _ in range(self.num_models)],
+                device=device,
+            )
+        )
+
+        if num_representatives is not None:
+            self.representatives_prior = torch.distributions.Categorical(
+                probs=torch.tensor(
+                    [
+                        1 / self.num_representatives
+                        for _ in range(self.num_representatives)
+                    ],
+                    device=device,
+                )
+            )
+
+    def sample(self, shape) -> torch.Tensor:
+        """
+        Sample indices from the prior distribution.
+
+        Args:
+            shape (tuple): Shape of the samples to be generated.
+
+        Returns:
+            torch.Tensor: If num_representatives is not None, returns a 2D tensor where
+                  the first column contains samples from the index prior and
+                  the second column contains samples from the representatives prior.
+                  Otherwise, returns a 1D tensor with samples from the index prior.
+        """
+        if self.num_representatives is not None:
+            return torch.stack(
+                [
+                    self.index_prior.sample(shape),
+                    self.representatives_prior.sample(shape),
+                ],
+                dim=1,
+            )
+        else:
+            return self.index_prior.sample(shape)
+
+
 def get_image_priors(
-    max_index, image_config: dict, device="cuda"
+    num_models: int, num_representatives: int, image_config: dict, device="cuda"
 ) -> zuko.distributions.BoxUniform:
-    """
-    Return uniform prior in 1d from 0 to 19
 
-    Args:
-        max_index (int): max index of the 1d prior
-
-    Returns:
-        zuko.distributions.BoxUniform: prior
-    """
     if isinstance(image_config["SIGMA"], list) and len(image_config["SIGMA"]) == 2:
         lower = torch.tensor(
             [[image_config["SIGMA"][0]]], dtype=torch.float32, device=device
@@ -110,10 +153,7 @@ def get_image_priors(
         ndims=1,
     )
 
-    index_prior = zuko.distributions.BoxUniform(
-        lower=torch.tensor([0], dtype=torch.float32, device=device),
-        upper=torch.tensor([max_index], dtype=torch.float32, device=device),
-    )
+    index_prior = IndexPrior(num_models, num_representatives, device)
     quaternion_prior = QuaternionPrior(device)
     if (
         image_config.get("ROTATIONS")
@@ -132,7 +172,6 @@ def get_image_priors(
         b_factor_prior,
         amp_prior,
         snr_prior,
-        device=device,
     )
 
 
@@ -168,7 +207,6 @@ class ImagePrior:
         b_factor_prior,
         amp_prior,
         snr_prior,
-        device,
     ) -> None:
         self.priors = [
             index_prior,
