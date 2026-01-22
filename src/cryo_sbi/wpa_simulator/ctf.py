@@ -1,40 +1,44 @@
 import torch
 
 
-def apply_ctf(image: torch.Tensor, defocus, b_factor, amp, pixel_size) -> torch.Tensor:
-    """
-    Applies the CTF to the image.
 
-    Args:
-        image (torch.Tensor): The image to apply the CTF to.
-        defocus (torch.Tensor): The defocus value.
-        b_factor (torch.Tensor): The B-factor value.
-        amp (torch.Tensor): The amplitude value.
-        pixel_size (torch.Tensor): The pixel size value.
-
-    Returns:
-        torch.Tensor: The image with the CTF applied.
-    """
+def apply_ctf(
+    image: torch.Tensor,
+    defocus,        # µm
+    b_factor,
+    amp,
+    pixel_size,     # Å
+    voltage_kv,     # kV
+) -> torch.Tensor:
 
     num_batch, num_pixels, _ = image.shape
-    freq_pix_1d = torch.fft.fftfreq(num_pixels, d=pixel_size, device=image.device)
+
+    freq_pix_1d = torch.fft.fftfreq(
+        num_pixels, d=pixel_size, device=image.device
+    )
     x, y = torch.meshgrid(freq_pix_1d, freq_pix_1d, indexing="ij")
 
-    freq2_2d = x**2 + y**2
-    freq2_2d = freq2_2d.expand(num_batch, -1, -1)
-    imag = torch.zeros_like(freq2_2d, device=image.device) * 1j
+    freq2_2d = (x**2 + y**2).expand(num_batch, -1, -1)
 
-    env = torch.exp(-b_factor * freq2_2d * 0.5)
-    phase = defocus * torch.pi * 2.0 * 10000 * 0.019866  # hardcoded 0.019866 for 300kV
+    # Electron wavelength (Å)
+    V = voltage_kv * 1e3
+    m_ec2 = 511e3
+    lambda_e = 12.3986 / torch.sqrt(V * (1.0 + V / (2.0 * m_ec2)))
+
+    # Phase prefactor: 2π λ Δf
+    phase = 2.0 * torch.pi * lambda_e * defocus * 1e4
+
+    env = torch.exp(-0.5 * b_factor * freq2_2d)
+
+    chi = 0.5 * phase * freq2_2d
 
     ctf = (
-        -amp * torch.cos(phase * freq2_2d * 0.5)
-        - torch.sqrt(1 - amp**2) * torch.sin(phase * freq2_2d * 0.5)
-        + imag
+        -amp * torch.cos(chi)
+        - torch.sqrt(1 - amp**2) * torch.sin(chi)
     )
+
     ctf = ctf * env / amp
 
-    conv_image_ctf = torch.fft.fft2(image) * ctf
-    image_ctf = torch.fft.ifft2(conv_image_ctf).real
-
+    image_ctf = torch.fft.ifft2(torch.fft.fft2(image) * ctf).real
     return image_ctf
+
