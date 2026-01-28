@@ -145,6 +145,9 @@ def train_classifier(
     pixel_size = torch.tensor(
         image_config["PIXEL_SIZE"], dtype=torch.float32, device=device
     )
+    voltage = torch.tensor(
+        image_config["VOLTAGE"], dtype=torch.float32, device=device
+    )
 
     estimator = load_model(
         train_config, model_state_dict, device, train_from_checkpoint
@@ -179,7 +182,7 @@ def train_classifier(
     with tqdm(range(epochs), unit="epoch") as tq:
         for epoch in tq:
             losses = []
-            for parameters in islice(prior_loader, 100):
+            for index, parameters in enumerate(tqdm(islice(prior_loader, 2), total=2)):
                 (
                     indices,
                     quaternions,
@@ -202,6 +205,7 @@ def train_classifier(
                     snr.to(device, non_blocking=True),
                     num_pixels,
                     pixel_size,
+                    voltage,
                 )
                 indices = indices[:, 0] if indices.ndim == 2 else indices
                 for _indices, _images in zip(

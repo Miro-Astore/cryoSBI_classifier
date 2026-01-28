@@ -22,6 +22,7 @@ def cryo_em_simulator(
     snr,
     num_pixels,
     pixel_size,
+    voltage,
 ):
     """
     Simulates a bacth of cryo-electron microscopy (cryo-EM) images of a set of given coars-grained models.
@@ -54,7 +55,7 @@ def cryo_em_simulator(
         num_pixels,
         pixel_size,
     )
-    image = apply_ctf(image, defocus, b_factor, amp, pixel_size)
+    image = apply_ctf(image, defocus, b_factor, amp, pixel_size, voltage)
     image = add_noise(image, snr)
     image = gaussian_normalize_image(image)
     return image

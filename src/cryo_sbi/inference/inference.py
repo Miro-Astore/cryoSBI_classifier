@@ -28,7 +28,7 @@ def get_file_list(folder_with_mrcs):
         List[str]: Sorted list of .mrc file paths.
     """
 
-    particle_paths = [os.path.join(folder_with_mrcs, f) for f in os.listdir(folder_with_mrcs) if f.endswith(".mrc")]
+    particle_paths = [os.path.join(folder_with_mrcs, f) for f in os.listdir(folder_with_mrcs) if f.endswith(".mrc") or f.endswith(".mrcs")]
     try:
         particle_paths = sorted(particle_paths, key=lambda x: int(os.path.basename(x).split("_")[1]))
     except:

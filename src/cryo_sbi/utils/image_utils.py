@@ -330,7 +330,9 @@ def estimate_noise_psd(
     if mask_radius is None:
         mask_radius = image_size // 2
     mask = circular_mask(image_size, mask_radius, inside=False, device=images.device)
+    print(image_size)
     denominator = mask.sum() * images.shape[0]
+
     images_masked = images * mask
     mean_est = images_masked.sum() / denominator
     image_masked_fft = torch.fft.fft2(images_masked)
@@ -351,6 +353,7 @@ class WhitenImage:
     """
 
     def __init__(self, image_size: int, mask_radius: Union[int, None] = None) -> None:
+        print(image_size)
         self.image_size = image_size
         self.mask_radius = mask_radius
 
